@@ -2,6 +2,12 @@
 //  SNAP Wellness — Email Renderer   (Vercel serverless function)
 //  Receives Mason's JSON (POST) and returns email-safe HTML.
 //  Endpoint once deployed:  https://<your-project>.vercel.app/api/render
+//
+//  Matches SNAP's real email templates:
+//   - white header (black logo) for consumer, black header (white logo) for B2B
+//   - full-bleed hero image + live button
+//   - two-column product rows, icon benefit strips, True/False quiz rows
+//   - seasonal themes, multi-image support, richer footer
 // =============================================================
 
 // -------------------------------------------------------------
@@ -11,18 +17,31 @@ const BRAND = {
   name: "SNAP",
 
   // ---- Logo ----
-  logoUrl: "https://res.cloudinary.com/da3jrnugf/image/upload/v1785187930/SNAP_S_white_1_yzgqtc.png",
-  logoHeight: 42,        // rendered height of the symbol in the header (px)
+  // WHITE symbol for dark (B2B) header; BLACK symbol for light (consumer) header.
+  logoUrl:     "https://res.cloudinary.com/da3jrnugf/image/upload/v1785187930/SNAP_S_white_1_yzgqtc.png",
+  logoUrlDark: "https://res.cloudinary.com/da3jrnugf/image/upload/v1785187941/SNAP_S_black_pka143.png",
+  logoHeight: 40,
 
-  // ---- Core colors (brand book, "Color / Identification") ----
-  black:  "#000000",   // True Black  (PMS Process Black)
-  white:  "#ffffff",   // True White
-  panel:  "#ffffff",   // main content background
-  soft:   "#f4f4f4",   // light neutral panel (a transparency of black — NOT cream)
-  text:   "#111111",   // near-black body text
-  muted:  "#6b6b6b",   // gray body text
+  // Hero: false = headline is baked into the hero image (matches past emails),
+  // code just shows the image full-width + a live button beneath.
+  // true  = code overlays Mason's live headline on top of the photo.
+  heroOverlay: false,
 
-  // ---- Default accent (monochrome; themes add a sparing accent) ----
+  // Social links for the footer. Paste icon image URLs (white PNGs) once you
+  // host them; leave icon "" to fall back to small text links.
+  social: [
+    { label: "Twitter",   url: "https://twitter.com/",   icon: "" },
+    { label: "Facebook",  url: "https://facebook.com/",  icon: "" },
+    { label: "Instagram", url: "https://instagram.com/", icon: "" },
+  ],
+
+  // ---- Core colors (brand book) ----
+  black:  "#000000",
+  white:  "#ffffff",
+  panel:  "#ffffff",
+  soft:   "#f4f4f4",
+  text:   "#111111",
+  muted:  "#6b6b6b",
   accent: "#000000",
 
   // ---- Fonts (brand book, "On Type") ----
@@ -32,51 +51,49 @@ const BRAND = {
 
   footer: {
     site: "SNAPWELLNESS.COM",
-    address: "SNAP Wellness · 123 Example Street, City, ST 00000",
-    unsubscribeHtml: '<a href="{% unsubscribe %}" style="color:#6b6b6b;text-decoration:underline;">Unsubscribe</a>',
+    // Klaviyo merge tags — resolved when the email sends from Klaviyo.
+    unsubscribeHtml: 'No longer want to receive these emails? <a href="{% unsubscribe %}" style="color:#111111;text-decoration:underline;">Unsubscribe</a>.',
+    orgName: "{{ organization.name }}",
+    orgAddress: "{{ organization.full_address }}",
   },
 };
 
 const DEFAULT_CTA_URL = "https://www.snapwellness.com";
 
 // -------------------------------------------------------------
-//  1b) SEASONAL THEMES  —  EDIT / ADD OCCASIONS HERE.
-//      Accent hexes are from SNAP's expansion palette:
-//        Lavender #C5B4E3 · Lilac #E3C8D8 · Spring/lime #E0EC89
-//        Magenta  #E63888 · Emerald #008675 · Indigo #00249C
+//  1b) SEASONAL THEMES  (accent-only; skeleton stays SNAP) ------
+//      Palette: Lavender #C5B4E3 · Lilac #E3C8D8 · Spring #E0EC89
+//               Magenta #E63888 · Emerald #008675 · Indigo #00249C
 // -------------------------------------------------------------
 const THEMES = {
   default:    { accent: "#000000", kicker: "" },
-  newyear:    { accent: "#00249C", kicker: "THE RESET" },        // Jan
-  valentine:  { accent: "#E63888", kicker: "WITH LOVE" },        // Feb
-  spring:     { accent: "#C5B4E3", kicker: "SPRING" },           // Mar–Apr
-  memorial:   { accent: "#00249C", kicker: "SUMMER STARTS NOW" },// May
-  summer:     { accent: "#008675", kicker: "SUMMER" },           // Jun–Jul
-  july4:      { accent: "#00249C", kicker: "THE FOURTH" },       // July 4th week
-  highsummer: { accent: "#E0EC89", kicker: "PEAK SUMMER" },      // Aug
-  usopen:     { accent: "#E0EC89", kicker: "COURTSIDE" },        // US Open
-  labor:      { accent: "#00249C", kicker: "END OF SUMMER" },    // Labor Day
-  fall:       { accent: "#008675", kicker: "SPA SEASON" },       // Oct
-  gratitude:  { accent: "#6b6b6b", kicker: "GRATITUDE" },        // Nov
-  holiday:    { accent: "#008675", kicker: "THE HOLIDAY EDIT" }, // Dec
+  newyear:    { accent: "#00249C", kicker: "THE RESET" },
+  valentine:  { accent: "#E63888", kicker: "WITH LOVE" },
+  spring:     { accent: "#C5B4E3", kicker: "SPRING" },
+  memorial:   { accent: "#00249C", kicker: "SUMMER STARTS NOW" },
+  summer:     { accent: "#008675", kicker: "SUMMER" },
+  july4:      { accent: "#00249C", kicker: "THE FOURTH" },
+  highsummer: { accent: "#E0EC89", kicker: "PEAK SUMMER" },
+  usopen:     { accent: "#E0EC89", kicker: "COURTSIDE" },
+  labor:      { accent: "#00249C", kicker: "END OF SUMMER" },
+  fall:       { accent: "#008675", kicker: "SPA SEASON" },
+  gratitude:  { accent: "#6b6b6b", kicker: "GRATITUDE" },
+  holiday:    { accent: "#008675", kicker: "THE HOLIDAY EDIT" },
 };
 
 let C = Object.assign({}, BRAND, { kicker: "" });
+let AUD = "";   // audience for the current email (lowercased)
+
+function isB2B() { return AUD === "hotel" || AUD === "country club" || AUD === "camp"; }
 
 function pickThemeKey(d) {
-  const m = d.getMonth() + 1;
-  const day = d.getDate();
-  const md = m * 100 + day;
-
-  // specific occasion windows (priority over month season)
+  const m = d.getMonth() + 1, day = d.getDate(), md = m * 100 + day;
   if (md >= 1215 || md <= 101) return "holiday";
   if (md >= 208 && md <= 216)  return "valentine";
   if (md >= 522 && md <= 531)  return "memorial";
   if (md >= 701 && md <= 707)  return "july4";
   if (md >= 825 && md <= 908)  return "usopen";
   if (md >= 1122 && md <= 1130) return "gratitude";
-
-  // month-based seasons
   if (m === 1)  return "newyear";
   if (m === 2)  return "valentine";
   if (m === 3 || m === 4) return "spring";
@@ -89,12 +106,10 @@ function pickThemeKey(d) {
   if (m === 12) return "holiday";
   return "default";
 }
-
 function resolveTheme(data) {
-  const key =
-    (data && data.theme && THEMES[data.theme]) ? data.theme
-      : pickThemeKey(resolveDate(data));
+  const key = (data && data.theme && THEMES[data.theme]) ? data.theme : pickThemeKey(resolveDate(data));
   C = Object.assign({}, BRAND, THEMES[key] || THEMES.default);
+  AUD = String((data && data.audience) || "").toLowerCase();
   return key;
 }
 function resolveDate(data) {
@@ -107,23 +122,18 @@ function resolveDate(data) {
 //  2) HELPERS
 // -------------------------------------------------------------
 function esc(s) {
-  return String(s == null ? "" : s)
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 function paras(text, color) {
-  return String(text || "")
-    .split(/\n{2,}|\r\n\r\n/).filter(Boolean)
+  return String(text || "").split(/\n{2,}|\r\n\r\n/).filter(Boolean)
     .map(p => `<p style="margin:0 0 16px;font-family:${BRAND.bodyFont};font-size:16px;line-height:1.65;color:${color || C.text};">${esc(p).replace(/\n/g, "<br>")}</p>`)
     .join("");
 }
 function readableOn(hex) {
   const h = String(hex || "#000000").replace("#", "");
   if (h.length < 6) return "#ffffff";
-  const r = parseInt(h.substr(0, 2), 16),
-        g = parseInt(h.substr(2, 2), 16),
-        b = parseInt(h.substr(4, 2), 16);
-  const L = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
-  return L > 0.6 ? "#000000" : "#ffffff";
+  const r = parseInt(h.substr(0, 2), 16), g = parseInt(h.substr(2, 2), 16), b = parseInt(h.substr(4, 2), 16);
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 > 0.6 ? "#000000" : "#ffffff";
 }
 function button(label, url, onDark) {
   const href = esc(url && String(url).trim() ? url : DEFAULT_CTA_URL);
@@ -138,11 +148,18 @@ function button(label, url, onDark) {
     </td>
   </tr></table>`;
 }
+// small square-ish "shop now" button used inside product rows
+function smallButton(label, url) {
+  const href = esc(url && String(url).trim() ? url : DEFAULT_CTA_URL);
+  const text = esc(label || "SHOP NOW").toUpperCase();
+  return `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:4px 0;"><tr>
+    <td bgcolor="#000000"><a href="${href}" target="_blank" style="display:inline-block;padding:10px 22px;font-family:${BRAND.bodyFont};font-size:11px;letter-spacing:1px;font-weight:bold;text-transform:uppercase;color:#ffffff;text-decoration:none;">${text}</a></td>
+  </tr></table>`;
+}
 
 function toList(v) {
   if (v == null) return [];
-  const arr = Array.isArray(v) ? v : [v];
-  return arr.filter(u => u != null && String(u).trim() !== "");
+  return (Array.isArray(v) ? v : [v]).filter(u => u != null && String(u).trim() !== "");
 }
 function img(url, alt) {
   if (!url) return "";
@@ -151,86 +168,226 @@ function img(url, alt) {
 function imgs(urls, alt) {
   const list = toList(urls);
   if (!list.length) return "";
-  return list.map((u, i) =>
-    `<div style="font-size:0;line-height:0;${i ? "margin-top:2px;" : ""}">${img(u, alt)}</div>`
-  ).join("");
+  return list.map((u, i) => `<div style="font-size:0;line-height:0;${i ? "margin-top:2px;" : ""}">${img(u, alt)}</div>`).join("");
 }
 function imgsCentered(urls, alt, w) {
   const list = toList(urls);
   if (!list.length) return "";
   const width = w || 240;
-  return list.map((u, i) =>
-    `<div style="${i ? "margin-top:16px;" : ""}"><img src="${esc(u)}" alt="${esc(alt || "")}" width="${width}" style="display:block;margin:0 auto;width:${width}px;max-width:80%;height:auto;border:0;"></div>`
-  ).join("");
+  return list.map((u, i) => `<div style="${i ? "margin-top:16px;" : ""}"><img src="${esc(u)}" alt="${esc(alt || "")}" width="${width}" style="display:block;margin:0 auto;width:${width}px;max-width:80%;height:auto;border:0;"></div>`).join("");
 }
-
 function headline(text, color, size) {
   return `<h1 style="margin:0 0 16px;font-family:${BRAND.headingFont};font-weight:700;font-size:${size || 30}px;line-height:1.12;letter-spacing:1px;text-transform:uppercase;color:${color || C.text};">${esc(text)}</h1>`;
 }
 function scriptHeader(text, color) {
-  return `<div style="font-family:${BRAND.headingFont};font-weight:500;font-size:30px;line-height:1.12;letter-spacing:0.2px;color:${color || C.text};">${esc(text)}</div>`;
+  return `<div style="font-family:${BRAND.headingFont};font-weight:500;font-size:30px;line-height:1.14;letter-spacing:0.4px;text-transform:uppercase;color:${color || C.text};">${esc(text)}</div>`;
 }
-function kickerRow() {
+function kickerRow(dark) {
   if (!C.kicker) return "";
   const fg = readableOn(C.accent);
-  return `<tr><td style="padding:0 24px 16px;background:${C.black};">
+  const bg = dark ? C.black : C.white;
+  return `<tr><td style="padding:0 24px 14px;background:${bg};">
     <span style="display:inline-block;background:${C.accent};color:${fg};font-family:${BRAND.headingFont};font-size:11px;letter-spacing:3px;font-weight:bold;text-transform:uppercase;padding:5px 12px;">${esc(C.kicker)}</span>
   </td></tr>`;
+}
+// footer social row (icons if provided, else text links)
+function socialRow() {
+  const items = (BRAND.social || []).filter(s => s && s.url);
+  if (!items.length) return "";
+  const cells = items.map(s => s.icon
+    ? `<td style="padding:0 10px;"><a href="${esc(s.url)}" target="_blank"><img src="${esc(s.icon)}" alt="${esc(s.label)}" width="18" height="18" style="display:block;border:0;"></a></td>`
+    : `<td style="padding:0 10px;"><a href="${esc(s.url)}" target="_blank" style="font-family:${BRAND.bodyFont};font-size:11px;letter-spacing:1px;color:${C.muted};text-decoration:none;text-transform:uppercase;">${esc(s.label)}</a></td>`
+  ).join("");
+  return `<table role="presentation" cellpadding="0" cellspacing="0" align="center" style="margin:0 auto;"><tr>${cells}</tr></table>`;
 }
 
 // -------------------------------------------------------------
 //  3) SECTION RENDERERS
 // -------------------------------------------------------------
 const RENDER = {
+  // ---- Shared ----
   logo_header() {
-    const inner = BRAND.logoUrl
-      ? `<img src="${esc(BRAND.logoUrl)}" alt="${esc(BRAND.name)}" height="${BRAND.logoHeight}" style="display:block;height:${BRAND.logoHeight}px;width:auto;border:0;">`
-      : `<span style="font-family:${BRAND.headingFont};font-weight:700;font-size:22px;letter-spacing:2px;color:#ffffff;">${esc(BRAND.name)}</span>`;
-    return `<tr><td style="padding:18px 24px;background:${C.black};">${inner}</td></tr>`;
+    const dark = isB2B();                          // B2B => black bar/white logo; consumer => white bar/black logo
+    const bg = dark ? C.black : C.white;
+    const src = dark ? BRAND.logoUrl : BRAND.logoUrlDark;
+    const inner = src
+      ? `<img src="${esc(src)}" alt="${esc(BRAND.name)}" height="${BRAND.logoHeight}" style="display:block;height:${BRAND.logoHeight}px;width:auto;border:0;">`
+      : `<span style="font-family:${BRAND.headingFont};font-weight:700;font-size:22px;letter-spacing:2px;color:${dark ? "#ffffff" : "#000000"};">${esc(BRAND.name)}</span>`;
+    const border = dark ? "" : "border-bottom:1px solid #ececec;";
+    return `<tr><td align="center" style="padding:16px 24px;background:${bg};${border}">${inner}</td></tr>`;
   },
   footer() {
-    return `<tr><td align="center" style="padding:30px 24px;background:${C.black};">
-      <p style="margin:0 0 10px;font-family:${BRAND.headingFont};font-size:13px;letter-spacing:2px;color:#ffffff;">${esc(BRAND.footer.site)}</p>
-      <p style="margin:0 0 8px;font-family:${BRAND.bodyFont};font-size:11px;line-height:1.6;color:${C.muted};">${esc(BRAND.footer.address)}</p>
-      <p style="margin:0;font-family:${BRAND.bodyFont};font-size:11px;line-height:1.6;color:${C.muted};">${BRAND.footer.unsubscribeHtml}</p>
+    return `<tr><td align="center" style="padding:22px 24px;background:${C.black};">
+      <p style="margin:0;font-family:${BRAND.headingFont};font-size:13px;letter-spacing:2px;color:#ffffff;">${esc(BRAND.footer.site)}</p>
+    </td></tr>
+    <tr><td align="center" style="padding:22px 24px 10px;background:${C.panel};">
+      ${socialRow()}
+    </td></tr>
+    <tr><td align="center" style="padding:6px 24px 26px;background:${C.panel};">
+      <p style="margin:0 0 12px;font-family:${BRAND.bodyFont};font-size:12px;line-height:1.6;color:${C.text};">${BRAND.footer.unsubscribeHtml}</p>
+      <p style="margin:0 0 4px;font-family:${BRAND.bodyFont};font-size:11px;line-height:1.6;color:${C.muted};">${BRAND.footer.orgName}</p>
+      <p style="margin:0;font-family:${BRAND.bodyFont};font-size:11px;line-height:1.6;color:${C.muted};">${BRAND.footer.orgAddress}</p>
     </td></tr>`;
   },
 
+  // ---- Consumer ----
+  // Hero: full-bleed image (headline usually baked in) + subhead + live button.
+  hero_dark(s) {
+    const imgHtml = imgs(s.product_image_url || s.image_url, s.headline);
+    if (BRAND.heroOverlay && s.headline) {
+      // optional overlay mode (live text on the photo)
+      return `<tr><td style="background:${C.black};position:relative;">
+        ${imgHtml}
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+          <td align="center" style="padding:32px;">
+            ${headline(s.headline, "#ffffff", 30)}
+            ${s.subheadline ? `<p style="margin:0 0 16px;font-family:${BRAND.bodyFont};font-size:15px;line-height:1.5;color:#e6e6e6;">${esc(s.subheadline)}</p>` : ""}
+            ${button(s.cta_label, s.cta_url, true)}
+          </td>
+        </tr></table>
+      </td></tr>`;
+    }
+    // default: image (with baked headline) + live subhead/button on a clean bar
+    const hasBar = s.subheadline || s.cta_label;
+    return `<tr><td style="background:${C.panel};">${imgHtml}</td></tr>
+    ${hasBar ? `<tr><td align="center" style="padding:22px 32px 26px;background:${C.panel};">
+      ${s.subheadline ? `<p style="margin:0 0 14px;font-family:${BRAND.bodyFont};font-size:15px;line-height:1.55;color:${C.muted};">${esc(s.subheadline)}</p>` : ""}
+      ${s.cta_label ? button(s.cta_label, s.cta_url, false) : ""}
+    </td></tr>` : ""}`;
+  },
+  collections_intro(s) {
+    return `<tr><td align="center" style="padding:44px 32px 18px;background:${C.panel};">
+      ${scriptHeader(s.header, C.text)}
+      ${s.subtitle ? `<p style="margin:14px auto 0;max-width:440px;font-family:${BRAND.bodyFont};font-size:15px;line-height:1.6;color:${C.muted};">${esc(s.subtitle)}</p>` : ""}
+    </td></tr>`;
+  },
+  // Two-column product row: image on the right, copy + CTA on the left.
+  collection_row(s) {
+    const image = toList(s.bottle_image_url || s.product_image_url)[0];
+    const left = `
+      ${s.eyebrow ? `<p style="margin:0 0 6px;font-family:${BRAND.bodyFont};font-size:11px;letter-spacing:1px;text-transform:uppercase;color:${C.accent};">${esc(s.eyebrow)}</p>` : ""}
+      ${s.collection ? `<p style="margin:0 0 8px;font-family:${BRAND.headingFont};font-weight:bold;font-size:18px;letter-spacing:0.3px;color:${C.text};">${esc(s.collection)}</p>` : ""}
+      ${s.description ? `<p style="margin:0 0 14px;font-family:${BRAND.bodyFont};font-size:14px;line-height:1.55;color:${C.muted};">${esc(s.description)}</p>` : ""}
+      ${smallButton(s.cta_label, s.cta_url)}`;
+    const right = image ? `<img src="${esc(image)}" alt="${esc(s.collection || "")}" width="270" style="display:block;width:100%;max-width:270px;height:auto;border:0;">` : "";
+    return `<tr><td style="padding:16px 24px;background:${C.panel};">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+        <td width="52%" valign="middle" class="stackcol" style="padding:8px 16px 8px 6px;">${left}</td>
+        <td width="48%" valign="middle" class="stackcol" style="padding:8px 0;">${right}</td>
+      </tr></table>
+    </td></tr>`;
+  },
+  about_formula(s) {
+    return `<tr><td style="padding:0;background:${C.panel};">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+        <td align="center" style="padding:40px 32px 8px;">${s.header ? scriptHeader(s.header, C.text) : ""}</td>
+      </tr></table>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+        <td align="center" style="padding:8px 40px 28px;">${paras(s.body)}</td>
+      </tr></table>
+      ${imgs(s.lifestyle_image_url, s.header)}
+    </td></tr>`;
+  },
+  product_card(s) {
+    const boxes = toList(s.product_image_url).map((u, i) =>
+      `<div style="${i ? "margin-top:12px;" : ""}background:${C.soft};padding:24px;"><img src="${esc(u)}" alt="${esc(s.name)}" width="240" style="display:block;margin:0 auto;width:240px;max-width:80%;height:auto;border:0;"></div>`).join("");
+    return `<tr><td align="center" style="padding:24px 32px;background:${C.panel};">
+      ${boxes}
+      ${s.name ? `<p style="margin:14px 0 0;font-family:${BRAND.headingFont};font-weight:bold;font-size:14px;letter-spacing:1px;text-transform:uppercase;color:${C.text};">${esc(s.name)}</p>` : ""}
+    </td></tr>`;
+  },
+  closing_lifestyle(s) {
+    const imgHtml = imgs(s.lifestyle_image_url, s.headline);
+    return `<tr><td style="background:${C.panel};">${imgHtml}</td></tr>
+    ${(s.headline || s.cta_label) ? `<tr><td align="center" style="padding:24px 32px 30px;background:${C.panel};">
+      ${s.headline ? headline(s.headline, C.text, 22) : ""}
+      ${s.cta_label ? button(s.cta_label, s.cta_url, false) : ""}
+    </td></tr>` : ""}`;
+  },
+  // True/False quiz row: copy + checkboxes + answer + CTA (left), image (right).
+  quiz_row(s) {
+    const isTrue = String(s.correct).toLowerCase() === "true";
+    const box = (on) => `<span style="display:inline-block;width:12px;height:12px;border:1px solid ${C.text};vertical-align:middle;margin-right:6px;background:${on ? C.text : "#ffffff"};"></span>`;
+    const left = `
+      ${s.number || s.prompt_label ? `<p style="margin:0 0 6px;font-family:${BRAND.bodyFont};font-size:12px;color:${C.muted};">${esc([s.number, s.prompt_label || "True or False?"].filter(Boolean).join(". "))}</p>` : ""}
+      <p style="margin:0 0 12px;font-family:${BRAND.headingFont};font-weight:bold;font-size:18px;line-height:1.2;color:${C.text};">${esc(s.question)}</p>
+      <p style="margin:0 0 12px;font-family:${BRAND.bodyFont};font-size:13px;color:${C.text};">${box(isTrue)}True&nbsp;&nbsp;&nbsp;${box(!isTrue)}False</p>
+      <div style="width:36px;height:1px;background:${C.muted};margin:0 0 12px;"></div>
+      <p style="margin:0 0 6px;font-family:${BRAND.headingFont};font-weight:bold;font-size:14px;color:${C.text};">${isTrue ? "True." : "False."}</p>
+      <p style="margin:0 0 14px;font-family:${BRAND.bodyFont};font-size:13px;line-height:1.55;color:${C.muted};">${esc(s.explanation)}</p>
+      ${smallButton(s.cta_label, s.cta_url)}`;
+    const image = toList(s.image_url || s.product_image_url)[0];
+    const right = image ? `<img src="${esc(image)}" alt="" width="270" style="display:block;width:100%;max-width:270px;height:auto;border:0;">` : "";
+    return `<tr><td style="padding:14px 24px;background:${C.soft};">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+        <td width="52%" valign="top" class="stackcol" style="padding:14px 16px;">${left}</td>
+        <td width="48%" valign="middle" class="stackcol" style="padding:0;">${right}</td>
+      </tr></table>
+    </td></tr>`;
+  },
+  // Icon benefit strip (Kids "THE KIDS COLLECTION", Hotel benefits). on black or white.
+  benefits_strip(s) {
+    const dark = s.on_dark !== false;              // default dark (black band)
+    const bg = dark ? C.black : C.panel;
+    const fg = dark ? "#ffffff" : C.text;
+    const sub = dark ? "#cfcfcf" : C.muted;
+    const items = (s.items || []);
+    const cells = items.map(it => `
+      <td valign="top" align="center" class="stackcol" style="padding:10px 10px;">
+        ${it.icon_url ? `<img src="${esc(it.icon_url)}" alt="" width="40" height="40" style="display:block;margin:0 auto 10px;border:0;">` : ""}
+        <p style="margin:0 0 4px;font-family:${BRAND.headingFont};font-weight:bold;font-size:12px;letter-spacing:0.5px;text-transform:uppercase;color:${fg};">${esc(it.label)}</p>
+        ${it.sub ? `<p style="margin:0;font-family:${BRAND.bodyFont};font-size:11px;line-height:1.4;color:${sub};">${esc(it.sub)}</p>` : ""}
+      </td>`).join("");
+    return `<tr><td style="padding:34px 18px;background:${bg};">
+      ${s.header ? `<p style="margin:0 0 22px;text-align:center;font-family:${BRAND.headingFont};font-weight:700;font-size:24px;letter-spacing:1px;text-transform:uppercase;color:${fg};">${esc(s.header)}</p>` : ""}
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${cells}</tr></table>
+    </td></tr>`;
+  },
+
+  // ---- Machine / B2B ----
   machine_hero(s) {
     return `<tr><td style="background:${C.black};">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
-        <td align="center" style="padding:40px 32px 28px;">
+        <td align="center" style="padding:40px 32px 26px;">
           ${headline(s.headline, "#ffffff", 30)}
-          ${button(s.cta_label, s.cta_url, true)}
+          ${s.subheadline ? `<p style="margin:0 0 18px;font-family:${BRAND.bodyFont};font-size:15px;line-height:1.5;color:#cfcfcf;">${esc(s.subheadline)}</p>` : ""}
         </td>
       </tr></table>
       ${imgs(s.machine_image_url, s.headline)}
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+        <td align="center" style="padding:22px 32px 34px;">${button(s.cta_label, s.cta_url, true)}</td>
+      </tr></table>
     </td></tr>`;
   },
   machine_body(s) {
-    return `<tr><td style="padding:42px 34px;background:${C.panel};">
-      ${s.header ? headline(s.header, C.text, 24) : ""}
-      ${paras(s.body)}
+    return `<tr><td align="center" style="padding:44px 40px;background:${C.panel};">
+      ${s.header ? `<p style="margin:0 0 16px;font-family:${BRAND.headingFont};font-weight:500;font-size:24px;letter-spacing:0.3px;color:${C.text};">${esc(s.header)}</p>` : ""}
+      <div style="max-width:460px;margin:0 auto;">${paras(s.body)}</div>
       ${toList(s.machine_photo_url).length ? `<div style="margin-top:20px;">${imgs(s.machine_photo_url, s.header)}</div>` : ""}
     </td></tr>`;
   },
-  claims_row() {
-    const claims = [
+  claims_row(s) {
+    const claims = (s && s.items) || [
       ["FULL-BODY COVERAGE", "Touchless application in 10 seconds"],
       ["CLEAN INGREDIENTS", "Hypoallergenic & lightweight"],
       ["STAIN-FREE", "Clothing-safe, no residue"],
-    ];
-    const cells = claims.map(([t, d]) => `
-      <td width="33%" align="center" valign="top" style="padding:6px 12px;">
-        <p style="margin:0 0 4px;font-family:${BRAND.headingFont};font-weight:bold;font-size:12px;letter-spacing:1px;color:${C.text};">${esc(t)}</p>
-        <div style="width:24px;height:2px;background:${C.accent};margin:6px auto 8px;"></div>
-        <p style="margin:0;font-family:${BRAND.bodyFont};font-size:12px;line-height:1.5;color:${C.muted};">${esc(d)}</p>
+    ].map(([label, sub]) => ({ label, sub }));
+    const cells = claims.map(it => `
+      <td width="33%" align="center" valign="top" class="stackcol" style="padding:6px 12px;">
+        ${it.icon_url ? `<img src="${esc(it.icon_url)}" alt="" width="34" height="34" style="display:block;margin:0 auto 8px;border:0;">` : ""}
+        <p style="margin:0 0 4px;font-family:${BRAND.headingFont};font-weight:bold;font-size:12px;letter-spacing:1px;color:${C.text};">${esc(it.label)}</p>
+        ${!it.icon_url ? `<div style="width:24px;height:2px;background:${C.accent};margin:6px auto 8px;"></div>` : ""}
+        <p style="margin:0;font-family:${BRAND.bodyFont};font-size:12px;line-height:1.5;color:${C.muted};">${esc(it.sub)}</p>
       </td>`).join("");
     return `<tr><td style="padding:32px 18px;background:${C.soft};">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${cells}</tr></table>
     </td></tr>`;
   },
   outcomes_row(s) {
+    // If items have labels/icons, render as an icon strip; else simple bullet list.
+    if (Array.isArray(s.items) && s.items.length) {
+      return RENDER.benefits_strip({ header: s.header, on_dark: s.on_dark, items: s.items });
+    }
     const items = (s.outcomes || []).map(o => `
       <p style="margin:0 0 14px;font-family:${BRAND.bodyFont};font-size:15px;line-height:1.5;color:${C.text};">
         <span style="color:${C.accent};font-weight:bold;">&#10022;</span>&nbsp;&nbsp;${esc(o)}</p>`).join("");
@@ -242,65 +399,6 @@ const RENDER = {
       ${button(s.cta_label, s.cta_url, true)}
     </td></tr>`;
   },
-
-  hero_dark(s) {
-    return `<tr><td style="background:${C.black};">
-      ${imgs(s.product_image_url, s.headline)}
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
-        <td align="center" style="padding:36px 32px;">
-          ${headline(s.headline, "#ffffff", 32)}
-          ${button(s.cta_label, s.cta_url, true)}
-        </td>
-      </tr></table>
-    </td></tr>`;
-  },
-  collections_intro(s) {
-    return `<tr><td align="center" style="padding:44px 32px 16px;background:${C.panel};">
-      ${scriptHeader(s.header, C.text)}
-      ${s.subtitle ? `<p style="margin:14px 0 0;font-family:${BRAND.bodyFont};font-size:16px;line-height:1.6;color:${C.muted};">${esc(s.subtitle)}</p>` : ""}
-    </td></tr>`;
-  },
-  collection_row(s) {
-    return `<tr><td align="center" style="padding:24px 32px 32px;background:${C.panel};">
-      ${imgsCentered(s.bottle_image_url, s.collection, 240)}
-      ${s.collection ? `<p style="margin:14px 0 8px;font-family:${BRAND.headingFont};font-weight:bold;font-size:15px;letter-spacing:1px;text-transform:uppercase;color:${C.text};">${esc(s.collection)}</p>` : ""}
-      ${s.description ? `<p style="margin:0 auto 14px;max-width:420px;font-family:${BRAND.bodyFont};font-size:15px;line-height:1.6;color:${C.muted};">${esc(s.description)}</p>` : ""}
-      ${button(s.cta_label, s.cta_url, false)}
-    </td></tr>`;
-  },
-  about_formula(s) {
-    return `<tr><td style="padding:0;background:${C.panel};">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
-        <td align="center" style="padding:40px 32px 8px;">
-          ${s.header ? scriptHeader(s.header, C.text) : ""}
-        </td>
-      </tr></table>
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
-        <td align="center" style="padding:8px 40px 28px;">${paras(s.body)}</td>
-      </tr></table>
-      ${imgs(s.lifestyle_image_url, s.header)}
-    </td></tr>`;
-  },
-  product_card(s) {
-    const boxes = toList(s.product_image_url).map((u, i) =>
-      `<div style="${i ? "margin-top:12px;" : ""}background:${C.soft};padding:24px;"><img src="${esc(u)}" alt="${esc(s.name)}" width="240" style="display:block;margin:0 auto;width:240px;max-width:80%;height:auto;border:0;"></div>`
-    ).join("");
-    return `<tr><td align="center" style="padding:24px 32px;background:${C.panel};">
-      ${boxes}
-      ${s.name ? `<p style="margin:14px 0 0;font-family:${BRAND.headingFont};font-weight:bold;font-size:14px;letter-spacing:1px;text-transform:uppercase;color:${C.text};">${esc(s.name)}</p>` : ""}
-    </td></tr>`;
-  },
-  closing_lifestyle(s) {
-    return `<tr><td style="background:${C.black};">
-      ${imgs(s.lifestyle_image_url, s.headline)}
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
-        <td align="center" style="padding:36px 32px;">
-          ${headline(s.headline, "#ffffff", 26)}
-          ${button(s.cta_label, s.cta_url, true)}
-        </td>
-      </tr></table>
-    </td></tr>`;
-  },
 };
 
 // -------------------------------------------------------------
@@ -308,6 +406,7 @@ const RENDER = {
 // -------------------------------------------------------------
 function buildEmail(data) {
   const themeKey = resolveTheme(data);
+  const dark = isB2B();
 
   const incoming = Array.isArray(data.sections) ? data.sections : [];
   const body = incoming
@@ -315,7 +414,7 @@ function buildEmail(data) {
     .map(s => { const fn = RENDER[s.type]; return fn ? fn(s) : `<!-- unknown section: ${esc(s.type)} -->`; })
     .join("\n");
 
-  const inner = RENDER.logo_header() + "\n" + kickerRow() + "\n" + body + "\n" + RENDER.footer();
+  const inner = RENDER.logo_header() + "\n" + kickerRow(dark) + "\n" + body + "\n" + RENDER.footer();
 
   return `<!DOCTYPE html>
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml">
@@ -324,7 +423,13 @@ function buildEmail(data) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <title>${esc(data.subject || BRAND.name)}</title>
-<!-- theme: ${esc(themeKey)} -->
+<!-- theme: ${esc(themeKey)} | audience: ${esc(AUD || "consumer")} -->
+<style>
+  @media only screen and (max-width:480px){
+    .stackcol{display:block !important;width:100% !important;padding:10px 6px !important;text-align:center !important;}
+    .stackcol img{margin:0 auto !important;}
+  }
+</style>
 </head>
 <body style="margin:0;padding:0;background:${C.soft};">
 <div style="display:none;max-height:0;overflow:hidden;opacity:0;">${esc(data.preview_text || "")}</div>
@@ -347,33 +452,22 @@ module.exports = async (req, res) => {
   try {
     let data = req.body;
     if (typeof data === "string") data = JSON.parse(data);
-
     if (data && typeof data.json === "string") {
       const env = data;
       data = JSON.parse(env.json);
-      ["send_date", "date", "publish_date", "date_iso", "theme"].forEach(k => {
+      ["send_date", "date", "publish_date", "date_iso", "theme", "audience"].forEach(k => {
         if (data[k] == null && env[k] != null) data[k] = env[k];
       });
     }
-
-    // send_date / theme can arrive as URL query params:
-    //   /api/render?send_date=2026-07-04     (auto seasonal theme)
-    //   /api/render?theme=usopen             (force a specific theme)
     const q = req.query || {};
     ["send_date", "date", "publish_date", "date_iso", "theme"].forEach(k => {
       if (data && (data[k] == null || data[k] === "") && q[k]) data[k] = q[k];
     });
-
     if (!data || !Array.isArray(data.sections)) {
       res.status(400).json({ error: "Expected a JSON body with a 'sections' array.", received: data }); return;
     }
     const html = buildEmail(data);
-    res.status(200).json({
-      subject: data.subject || "",
-      preview_text: data.preview_text || "",
-      theme: resolveTheme(data),
-      html
-    });
+    res.status(200).json({ subject: data.subject || "", preview_text: data.preview_text || "", theme: resolveTheme(data), html });
   } catch (err) {
     res.status(400).json({ error: "Could not parse Mason's JSON.", detail: String(err && err.message || err) });
   }
