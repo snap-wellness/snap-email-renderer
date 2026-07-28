@@ -479,11 +479,8 @@ const RENDER = {
   },
   claims_row(s) { return RENDER.benefits_strip(s); },   // alias — same graphic treatment
   outcomes_row(s) {
-    if (Array.isArray(s.items) && s.items.length || s.image_url) return RENDER.benefits_strip(s);
-    const items = (s.outcomes || []).map(o => `
-      <p style="margin:0 0 14px;font-family:${BRAND.bodyFont};font-size:15px;line-height:1.5;color:${C.text};">
-        <span style="color:${C.accent};font-weight:bold;">&#10022;</span>&nbsp;&nbsp;${escText(o)}</p>`).join("");
-    return `<tr><td style="padding:36px 44px;background:${C.panel};">${items}</td></tr>`;
+    // Never render loose bullets. Always use the benefit graphic strip.
+    return RENDER.benefits_strip({ header: s.header, set: s.set || (isB2B() ? "growth" : "consumer"), image_url: s.image_url, items: s.items, on_dark: s.on_dark });
   },
   closing_cta(s) {
     const head = s.header || s.headline;
