@@ -11,18 +11,14 @@ const BRAND = {
   name: "SNAP",
 
   // ---- Logo ----
-  logoUrl:     "https://res.cloudinary.com/da3jrnugf/image/upload/v1785187930/SNAP_S_white_1_yzgqtc.png",
-  logoUrlDark: "https://res.cloudinary.com/da3jrnugf/image/upload/v1785187941/SNAP_S_black_pka143.png",
-  logoHeight: 40,
+  logoUrl:     "https://res.cloudinary.com/da3jrnugf/image/upload/snap_lockup_white.png",   // full lockup (white) for the black B2B header
+  logoUrlDark: "https://res.cloudinary.com/da3jrnugf/image/upload/snap_lockup_black.png",   // full lockup (black) for the white consumer header
+  logoHeight: 38,
 
   // Benefit-strip GRAPHICS (icons + labels baked into one image each).
   // A benefits_strip uses: its own image_url, else graphics[section.graphic],
   // else the audience default (consumer -> consumer, B2B -> hotel).
-  graphics: {
-    consumer:  "https://res.cloudinary.com/da3jrnugf/image/upload/v1785257525/Screenshot_2026-07-28_at_12.52.03_PM_rvrivm.png",
-    hotel:     "https://res.cloudinary.com/da3jrnugf/image/upload/v1785258229/Screenshot_2026-07-28_at_1.03.47_PM_ltwa6g.png",     // TODO confirm: "why clubs choose" strip?
-    multizone: "https://res.cloudinary.com/da3jrnugf/image/upload/v1785258217/Screenshot_2026-07-28_at_1.03.34_PM_y9ydbx.png",     // TODO confirm: "multi-zone strategy" strip?
-  },
+  // Benefit strips are now code-built from ICONS + STRIP_SETS (defined below).
 
   social: [
     { label: "Twitter",   url: "https://twitter.com/",   icon: "" },
@@ -42,6 +38,7 @@ const BRAND = {
   // ---- Fonts (brand book, "On Type") ----
   headingFont: "'Attila Sans Uniform', 'Helvetica Neue', Helvetica, Arial, sans-serif",
   bodyFont:    "'Helvetica Neue', Helvetica, Arial, sans-serif",
+  cursiveFont: "'Snell Roundhand', 'Apple Chancery', 'Segoe Script', Georgia, serif",   // "About the Formula" script
 
   footer: {
     site: "SNAPWELLNESS.COM",
@@ -81,6 +78,50 @@ function productImage(name) {
   if (!name) return "";
   return PRODUCTS[String(name).trim().toLowerCase()] || "";
 }
+
+// -------------------------------------------------------------
+//  1d) BENEFIT ICONS + STRIP SETS  (code-built, always aligned)
+// -------------------------------------------------------------
+const ICON_BASE = "https://res.cloudinary.com/da3jrnugf/image/upload/";
+const ICONS = {};
+["reef_safe","clothing_safe","water_sweat","moisturizing","hypoallergenic","uva_uvb",
+ "elevate_experience","generate_revenue","market_visibility",
+ "ten_second_coverage","clean_ingredients","stain_free"].forEach(n => { ICONS[n] = ICON_BASE + n + ".png"; });
+
+// White-circle BADGES for the "About the Formula" flanking layout.
+const BADGES = {};
+["mineral_based","hypoallergenic","water_sweat","no_white_cast","moisturizing","uva_uvb"].forEach(n => { BADGES[n] = ICON_BASE + "b_" + n + ".png"; });
+// Default 6 features (3 left / 3 right) if a brief doesn't specify.
+const DEFAULT_FEATURES = [
+  { badge: "mineral_based",  label: "Mineral-Based" },
+  { badge: "hypoallergenic", label: "Hypoallergenic" },
+  { badge: "water_sweat",    label: "Water & Sweat Resistant" },
+  { badge: "no_white_cast",  label: "No White Cast" },
+  { badge: "moisturizing",   label: "Moisturizing" },
+  { badge: "uva_uvb",        label: "UVA/UVB Broad Spectrum" },
+];
+
+// A benefits_strip picks a set by name (or the audience default). Each strip is
+// drawn in code (icon + label), so it's always full-width and perfectly aligned.
+const STRIP_SETS = {
+  consumer: { on_dark: true, items: [
+    { icon: "reef_safe",      label: "Reef-Safe & Eco-Friendly" },
+    { icon: "clothing_safe",  label: "Clothing Safe" },
+    { icon: "water_sweat",    label: "Water & Sweat Resistant" },
+    { icon: "moisturizing",   label: "Moisturizing" },
+    { icon: "hypoallergenic", label: "Hypoallergenic" },
+  ]},
+  growth: { on_dark: true, items: [
+    { icon: "elevate_experience", label: "Elevate Experience" },
+    { icon: "generate_revenue",   label: "Generate Revenue" },
+    { icon: "market_visibility",  label: "Increase Market Visibility" },
+  ]},
+  claims: { on_dark: true, items: [
+    { icon: "ten_second_coverage", label: "10 Second Coverage", sub: "One 10-second rotation gives guests complete, even sun protection." },
+    { icon: "clean_ingredients",   label: "Clean Ingredients",  sub: "Eco-friendly, hypoallergenic, and free from oxybenzone, PABA, and parabens." },
+    { icon: "stain_free",          label: "Stain-Free Application", sub: "Transparent and non-greasy, with no white cast that harms clothing." },
+  ]},
+};
 
 // -------------------------------------------------------------
 //  1c) SEASONAL ACCENT (subtle; no more "kicker" chip)
@@ -200,6 +241,19 @@ function headline(text, color, size) {
 function sub(text, color) {
   return `<p style="margin:0 0 16px;font-family:${BRAND.bodyFont};font-size:15px;line-height:1.55;color:${color || C.muted};">${escText(text)}</p>`;
 }
+function cursiveHeader(text, color) {
+  return `<div style="font-family:${BRAND.cursiveFont};font-style:italic;font-size:40px;line-height:1.1;color:${color || C.text};">${escText(text)}</div>`;
+}
+// one flanking badge cell: badge image + label (label side: 'left' or 'right')
+function badgeCell(feat, side) {
+  const src = BADGES[feat.badge] || feat.badge_url || "";
+  const badge = src ? `<img src="${esc(src)}" alt="" width="54" height="54" style="display:block;width:54px;height:54px;border:0;">` : "";
+  const label = `<span style="font-family:${BRAND.bodyFont};font-size:12px;line-height:1.3;color:${C.text};">${escText(feat.label)}</span>`;
+  const cells = side === "left"
+    ? `<td valign="middle" align="right" style="padding:8px 8px;">${label}</td><td valign="middle" width="60" style="padding:8px 0;">${badge}</td>`
+    : `<td valign="middle" width="60" style="padding:8px 0;">${badge}</td><td valign="middle" align="left" style="padding:8px 8px;">${label}</td>`;
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${cells}</tr></table>`;
+}
 function socialRow() {
   const items = (BRAND.social || []).filter(s => s && s.url);
   if (!items.length) return "";
@@ -208,6 +262,24 @@ function socialRow() {
     : `<td style="padding:0 10px;"><a href="${esc(s.url)}" target="_blank" style="font-family:${BRAND.bodyFont};font-size:11px;letter-spacing:1px;color:${C.muted};text-decoration:none;text-transform:uppercase;">${esc(s.label)}</a></td>`
   ).join("");
   return `<table role="presentation" cellpadding="0" cellspacing="0" align="center" style="margin:0 auto;"><tr>${cells}</tr></table>`;
+}
+// Code-built benefit strip (icon + label [+ sub]). Always full-width / aligned.
+function iconStrip(header, items, dark) {
+  const bg = dark ? C.black : C.panel;
+  const fg = dark ? "#ffffff" : C.text;
+  const subc = dark ? "#cfcfcf" : C.muted;
+  const cells = (items || []).map(it => {
+    const src = (it.icon && ICONS[it.icon]) || it.icon_url || "";
+    return `<td valign="top" align="center" class="stackcol" style="padding:14px 10px;">
+      ${src ? `<img src="${esc(src)}" alt="" width="46" height="46" style="display:block;margin:0 auto 12px;border:0;">` : ""}
+      <p style="margin:0 0 4px;font-family:${BRAND.headingFont};font-weight:bold;font-size:12px;letter-spacing:0.5px;text-transform:uppercase;color:${fg};">${escText(it.label)}</p>
+      ${it.sub ? `<p style="margin:0;font-family:${BRAND.bodyFont};font-size:11px;line-height:1.45;color:${subc};">${escText(it.sub)}</p>` : ""}
+    </td>`;
+  }).join("");
+  return `<tr><td style="padding:34px 16px;background:${bg};">
+    ${header ? `<p style="margin:0 0 22px;text-align:center;font-family:${BRAND.headingFont};font-weight:700;font-size:24px;letter-spacing:1px;text-transform:uppercase;color:${fg};">${escText(header)}</p>` : ""}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${cells}</tr></table>
+  </td></tr>`;
 }
 
 // -------------------------------------------------------------
@@ -271,15 +343,55 @@ const RENDER = {
       </tr></table>
     </td></tr>`;
   },
+  // Flanking layout: cursive header, blurb, product photo with 3 badges each side, product-name button.
   about_formula(s) {
+    const head = s.header || "About the Formula";
+    const productImg = s.product_image_url || s.lifestyle_image_url;
+    if (productImg) {
+      const feats = (Array.isArray(s.features) && s.features.length) ? s.features : DEFAULT_FEATURES;
+      const left = feats.slice(0, 3), right = feats.slice(3, 6);
+      const hero = `<img src="${esc(nextImage(productImg))}" alt="" width="240" style="display:block;width:100%;max-width:240px;height:auto;border:0;border-radius:14px;margin:0 auto;">`;
+      return `<tr><td align="center" style="padding:40px 24px 6px;background:${C.panel};">
+        ${cursiveHeader(head, C.text)}
+        ${s.body ? `<div style="max-width:420px;margin:14px auto 4px;">${paras(s.body)}</div>` : ""}
+      </td></tr>
+      <tr><td style="padding:6px 14px 8px;background:${C.panel};">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+          <td width="28%" valign="middle" class="stackcol" style="padding:0;">${left.map(fh => badgeCell(fh, "left")).join("")}</td>
+          <td width="44%" valign="middle" class="stackcol" style="padding:0 6px;">${hero}</td>
+          <td width="28%" valign="middle" class="stackcol" style="padding:0;">${right.map(fh => badgeCell(fh, "right")).join("")}</td>
+        </tr></table>
+      </td></tr>
+      ${s.cta_label ? `<tr><td align="center" style="padding:18px 32px 30px;background:${C.panel};">${button(s.cta_label, s.cta_url, false)}</td></tr>` : ""}`;
+    }
+    // fallback: simple centered version
     return `<tr><td style="padding:0;background:${C.panel};">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
-        <td align="center" style="padding:40px 32px 8px;">${s.header ? headline(s.header, C.text, 26) : ""}</td>
+        <td align="center" style="padding:40px 32px 8px;">${cursiveHeader(head, C.text)}</td>
       </tr></table>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
         <td align="center" style="padding:8px 40px 28px;">${paras(s.body)}</td>
       </tr></table>
       ${imgs(s.lifestyle_image_url, s.header)}
+    </td></tr>`;
+  },
+  // Two-up product grid: name, image (auto from catalog), button.
+  product_grid(s) {
+    const items = (s.items || []).slice(0, 4);
+    let rows = "";
+    for (let i = 0; i < items.length; i += 2) {
+      const cells = items.slice(i, i + 2).map(it => {
+        const im = nextImage(it.product_image_url || productImage(it.name));
+        return `<td width="50%" valign="top" align="center" class="stackcol" style="padding:12px 12px 24px;">
+          ${it.name ? `<p style="margin:0 0 12px;font-family:${BRAND.headingFont};font-weight:bold;font-size:14px;letter-spacing:0.5px;text-transform:uppercase;color:${C.text};">${escText(it.name)}</p>` : ""}
+          ${im ? `<div style="background:${C.soft};padding:18px;"><img src="${esc(im)}" alt="${esc(it.name)}" width="220" style="display:block;width:100%;max-width:220px;height:auto;border:0;margin:0 auto;"></div>` : ""}
+          <div style="margin-top:14px;">${smallButton(it.cta_label, it.cta_url)}</div>
+        </td>`;
+      }).join("");
+      rows += `<tr>${cells}</tr>`;
+    }
+    return `<tr><td style="padding:16px 20px;background:${C.panel};">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}</table>
     </td></tr>`;
   },
   product_card(s) {
@@ -323,30 +435,22 @@ const RENDER = {
   // Uses per-campaign image_url, else the standard BRAND.benefitGraphic.
   // Falls back to a text/icon build only if no graphic is available.
   benefits_strip(s) {
-    const dark = s.on_dark !== false;
-    const bg = dark ? C.black : C.panel;
-    const fg = dark ? "#ffffff" : C.text;
-    const graphic = s.image_url ? nextImage(s.image_url)
-      : (s.graphic && BRAND.graphics[s.graphic]) ? BRAND.graphics[s.graphic]
-      : (isB2B() ? BRAND.graphics.hotel : BRAND.graphics.consumer);
-    if (graphic) {
-      return `<tr><td style="padding:0;background:${bg};">
-        ${s.header ? `<p style="margin:0;padding:30px 24px 6px;text-align:center;font-family:${BRAND.headingFont};font-weight:700;font-size:24px;letter-spacing:1px;text-transform:uppercase;color:${fg};">${escText(s.header)}</p>` : ""}
-        <img src="${esc(graphic)}" alt="" width="600" style="display:block;width:100%;max-width:600px;height:auto;border:0;">
-      </td></tr>`;
+    // 1) explicit graphic image overrides (rarely needed now)
+    if (s.image_url) {
+      const g = nextImage(s.image_url);
+      if (g) {
+        const dk = s.on_dark !== false;
+        return `<tr><td style="padding:0;background:${dk ? C.black : C.panel};">
+          ${s.header ? `<p style="margin:0;padding:30px 24px 6px;text-align:center;font-family:${BRAND.headingFont};font-weight:700;font-size:24px;letter-spacing:1px;text-transform:uppercase;color:${dk ? "#ffffff" : C.text};">${escText(s.header)}</p>` : ""}
+          <img src="${esc(g)}" alt="" width="600" style="display:block;width:100%;max-width:600px;height:auto;border:0;">
+        </td></tr>`;
+      }
     }
-    // fallback: build from items
-    const items = (s.items || []);
-    const cells = items.map(it => `
-      <td valign="top" align="center" class="stackcol" style="padding:10px 10px;">
-        ${it.icon_url ? `<img src="${esc(it.icon_url)}" alt="" width="40" height="40" style="display:block;margin:0 auto 10px;border:0;">` : ""}
-        <p style="margin:0 0 4px;font-family:${BRAND.headingFont};font-weight:bold;font-size:12px;letter-spacing:0.5px;text-transform:uppercase;color:${fg};">${escText(it.label)}</p>
-        ${it.sub ? `<p style="margin:0;font-family:${BRAND.bodyFont};font-size:11px;line-height:1.4;color:${dark ? "#cfcfcf" : C.muted};">${escText(it.sub)}</p>` : ""}
-      </td>`).join("");
-    return `<tr><td style="padding:34px 18px;background:${bg};">
-      ${s.header ? `<p style="margin:0 0 22px;text-align:center;font-family:${BRAND.headingFont};font-weight:700;font-size:24px;letter-spacing:1px;text-transform:uppercase;color:${fg};">${escText(s.header)}</p>` : ""}
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${cells}</tr></table>
-    </td></tr>`;
+    // 2) code-built strip from a named set (default by audience), or ad-hoc items
+    const setKey = s.set || (isB2B() ? "claims" : "consumer");
+    const def = STRIP_SETS[setKey] || (Array.isArray(s.items) && s.items.length ? { on_dark: s.on_dark !== false, items: s.items } : null);
+    if (def) return iconStrip(s.header, def.items, def.on_dark !== false);
+    return "";
   },
 
   // ---- Machine / B2B ----
