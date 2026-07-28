@@ -2,12 +2,6 @@
 //  SNAP Wellness — Email Renderer   (Vercel serverless function)
 //  Receives Mason's JSON (POST) and returns email-safe HTML.
 //  Endpoint once deployed:  https://<your-project>.vercel.app/api/render
-//
-//  Matches SNAP's real email templates:
-//   - white header (black logo) for consumer, black header (white logo) for B2B
-//   - full-bleed hero image + live button
-//   - two-column product rows, icon benefit strips, True/False quiz rows
-//   - seasonal themes, multi-image support, richer footer
 // =============================================================
 
 // -------------------------------------------------------------
@@ -17,18 +11,14 @@ const BRAND = {
   name: "SNAP",
 
   // ---- Logo ----
-  // WHITE symbol for dark (B2B) header; BLACK symbol for light (consumer) header.
   logoUrl:     "https://res.cloudinary.com/da3jrnugf/image/upload/v1785187930/SNAP_S_white_1_yzgqtc.png",
   logoUrlDark: "https://res.cloudinary.com/da3jrnugf/image/upload/v1785187941/SNAP_S_black_pka143.png",
   logoHeight: 40,
 
-  // Hero: false = headline is baked into the hero image (matches past emails),
-  // code just shows the image full-width + a live button beneath.
-  // true  = code overlays Mason's live headline on top of the photo.
+  // Hero: false = headline baked into the hero image; true = code overlays live text.
   heroOverlay: false,
 
-  // Social links for the footer. Paste icon image URLs (white PNGs) once you
-  // host them; leave icon "" to fall back to small text links.
+  // Footer social links. Paste white icon PNG URLs; leave "" for text links.
   social: [
     { label: "Twitter",   url: "https://twitter.com/",   icon: "" },
     { label: "Facebook",  url: "https://facebook.com/",  icon: "" },
@@ -48,10 +38,10 @@ const BRAND = {
   headingFont: "'Attila Sans Uniform', 'Helvetica Neue', Helvetica, Arial, sans-serif",
   bodyFont:    "'Helvetica Neue', Helvetica, Arial, sans-serif",
   scriptFont:  "'Attila Sans Uniform', 'Helvetica Neue', Helvetica, Arial, sans-serif",
+  cursiveFont: "'Snell Roundhand', 'Apple Chancery', 'Segoe Script', Georgia, serif",
 
   footer: {
     site: "SNAPWELLNESS.COM",
-    // Klaviyo merge tags — resolved when the email sends from Klaviyo.
     unsubscribeHtml: 'No longer want to receive these emails? <a href="{% unsubscribe %}" style="color:#111111;text-decoration:underline;">Unsubscribe</a>.',
     orgName: "{{ organization.name }}",
     orgAddress: "{{ organization.full_address }}",
@@ -61,9 +51,7 @@ const BRAND = {
 const DEFAULT_CTA_URL = "https://www.snapwellness.com";
 
 // -------------------------------------------------------------
-//  1b) SEASONAL THEMES  (accent-only; skeleton stays SNAP) ------
-//      Palette: Lavender #C5B4E3 · Lilac #E3C8D8 · Spring #E0EC89
-//               Magenta #E63888 · Emerald #008675 · Indigo #00249C
+//  1b) SEASONAL THEMES  (accent-only; skeleton stays SNAP)
 // -------------------------------------------------------------
 const THEMES = {
   default:    { accent: "#000000", kicker: "" },
@@ -82,7 +70,7 @@ const THEMES = {
 };
 
 let C = Object.assign({}, BRAND, { kicker: "" });
-let AUD = "";   // audience for the current email (lowercased)
+let AUD = "";
 
 function isB2B() { return AUD === "hotel" || AUD === "country club" || AUD === "camp"; }
 
@@ -148,7 +136,6 @@ function button(label, url, onDark) {
     </td>
   </tr></table>`;
 }
-// small square-ish "shop now" button used inside product rows
 function smallButton(label, url) {
   const href = esc(url && String(url).trim() ? url : DEFAULT_CTA_URL);
   const text = esc(label || "SHOP NOW").toUpperCase();
@@ -161,17 +148,28 @@ function toList(v) {
   if (v == null) return [];
   return (Array.isArray(v) ? v : [v]).filter(u => u != null && String(u).trim() !== "");
 }
+// Track image URLs already shown in this email so the SAME image is never
+// rendered twice (reset per email in buildEmail).
+let SEEN = new Set();
+function once(url) {
+  const k = String(url == null ? "" : url).trim();
+  if (!k || SEEN.has(k)) return false;
+  SEEN.add(k); return true;
+}
+function newImages(urls) { return toList(urls).filter(once); }
+function nextImage(urls) { for (const u of toList(urls)) { if (once(u)) return u; } return ""; }
+
 function img(url, alt) {
   if (!url) return "";
   return `<img src="${esc(url)}" alt="${esc(alt || "")}" width="600" style="display:block;width:100%;max-width:600px;height:auto;border:0;">`;
 }
 function imgs(urls, alt) {
-  const list = toList(urls);
+  const list = newImages(urls);
   if (!list.length) return "";
   return list.map((u, i) => `<div style="font-size:0;line-height:0;${i ? "margin-top:2px;" : ""}">${img(u, alt)}</div>`).join("");
 }
 function imgsCentered(urls, alt, w) {
-  const list = toList(urls);
+  const list = newImages(urls);
   if (!list.length) return "";
   const width = w || 240;
   return list.map((u, i) => `<div style="${i ? "margin-top:16px;" : ""}"><img src="${esc(u)}" alt="${esc(alt || "")}" width="${width}" style="display:block;margin:0 auto;width:${width}px;max-width:80%;height:auto;border:0;"></div>`).join("");
@@ -190,7 +188,6 @@ function kickerRow(dark) {
     <span style="display:inline-block;background:${C.accent};color:${fg};font-family:${BRAND.headingFont};font-size:11px;letter-spacing:3px;font-weight:bold;text-transform:uppercase;padding:5px 12px;">${esc(C.kicker)}</span>
   </td></tr>`;
 }
-// footer social row (icons if provided, else text links)
 function socialRow() {
   const items = (BRAND.social || []).filter(s => s && s.url);
   if (!items.length) return "";
@@ -205,9 +202,8 @@ function socialRow() {
 //  3) SECTION RENDERERS
 // -------------------------------------------------------------
 const RENDER = {
-  // ---- Shared ----
   logo_header() {
-    const dark = isB2B();                          // B2B => black bar/white logo; consumer => white bar/black logo
+    const dark = isB2B();
     const bg = dark ? C.black : C.white;
     const src = dark ? BRAND.logoUrl : BRAND.logoUrlDark;
     const inner = src
@@ -230,12 +226,9 @@ const RENDER = {
     </td></tr>`;
   },
 
-  // ---- Consumer ----
-  // Hero: full-bleed image (headline usually baked in) + subhead + live button.
   hero_dark(s) {
     const imgHtml = imgs(s.product_image_url || s.image_url, s.headline);
     if (BRAND.heroOverlay && s.headline) {
-      // optional overlay mode (live text on the photo)
       return `<tr><td style="background:${C.black};position:relative;">
         ${imgHtml}
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
@@ -247,9 +240,8 @@ const RENDER = {
         </tr></table>
       </td></tr>`;
     }
-    // default: image (with baked headline) + live subhead/button on a clean bar
     const hasBar = s.subheadline || s.cta_label;
-    return `<tr><td style="background:${C.panel};">${imgHtml}</td></tr>
+    return `${imgHtml ? `<tr><td style="background:${C.panel};">${imgHtml}</td></tr>` : ""}
     ${hasBar ? `<tr><td align="center" style="padding:22px 32px 26px;background:${C.panel};">
       ${s.subheadline ? `<p style="margin:0 0 14px;font-family:${BRAND.bodyFont};font-size:15px;line-height:1.55;color:${C.muted};">${esc(s.subheadline)}</p>` : ""}
       ${s.cta_label ? button(s.cta_label, s.cta_url, false) : ""}
@@ -261,19 +253,20 @@ const RENDER = {
       ${s.subtitle ? `<p style="margin:14px auto 0;max-width:440px;font-family:${BRAND.bodyFont};font-size:15px;line-height:1.6;color:${C.muted};">${esc(s.subtitle)}</p>` : ""}
     </td></tr>`;
   },
-  // Two-column product row: image on the right, copy + CTA on the left.
   collection_row(s) {
-    const image = toList(s.bottle_image_url || s.product_image_url)[0];
+    const image = nextImage(s.bottle_image_url || s.product_image_url);
     const left = `
       ${s.eyebrow ? `<p style="margin:0 0 6px;font-family:${BRAND.bodyFont};font-size:11px;letter-spacing:1px;text-transform:uppercase;color:${C.accent};">${esc(s.eyebrow)}</p>` : ""}
       ${s.collection ? `<p style="margin:0 0 8px;font-family:${BRAND.headingFont};font-weight:bold;font-size:18px;letter-spacing:0.3px;color:${C.text};">${esc(s.collection)}</p>` : ""}
       ${s.description ? `<p style="margin:0 0 14px;font-family:${BRAND.bodyFont};font-size:14px;line-height:1.55;color:${C.muted};">${esc(s.description)}</p>` : ""}
       ${smallButton(s.cta_label, s.cta_url)}`;
-    const right = image ? `<img src="${esc(image)}" alt="${esc(s.collection || "")}" width="270" style="display:block;width:100%;max-width:270px;height:auto;border:0;">` : "";
+    if (!image) {
+      return `<tr><td style="padding:16px 32px;background:${C.panel};">${left}</td></tr>`;
+    }
     return `<tr><td style="padding:16px 24px;background:${C.panel};">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
         <td width="52%" valign="middle" class="stackcol" style="padding:8px 16px 8px 6px;">${left}</td>
-        <td width="48%" valign="middle" class="stackcol" style="padding:8px 0;">${right}</td>
+        <td width="48%" valign="middle" class="stackcol" style="padding:8px 0;"><img src="${esc(image)}" alt="${esc(s.collection || "")}" width="270" style="display:block;width:100%;max-width:270px;height:auto;border:0;"></td>
       </tr></table>
     </td></tr>`;
   },
@@ -289,7 +282,7 @@ const RENDER = {
     </td></tr>`;
   },
   product_card(s) {
-    const boxes = toList(s.product_image_url).map((u, i) =>
+    const boxes = newImages(s.product_image_url).map((u, i) =>
       `<div style="${i ? "margin-top:12px;" : ""}background:${C.soft};padding:24px;"><img src="${esc(u)}" alt="${esc(s.name)}" width="240" style="display:block;margin:0 auto;width:240px;max-width:80%;height:auto;border:0;"></div>`).join("");
     return `<tr><td align="center" style="padding:24px 32px;background:${C.panel};">
       ${boxes}
@@ -298,13 +291,12 @@ const RENDER = {
   },
   closing_lifestyle(s) {
     const imgHtml = imgs(s.lifestyle_image_url, s.headline);
-    return `<tr><td style="background:${C.panel};">${imgHtml}</td></tr>
+    return `${imgHtml ? `<tr><td style="background:${C.panel};">${imgHtml}</td></tr>` : ""}
     ${(s.headline || s.cta_label) ? `<tr><td align="center" style="padding:24px 32px 30px;background:${C.panel};">
       ${s.headline ? headline(s.headline, C.text, 22) : ""}
       ${s.cta_label ? button(s.cta_label, s.cta_url, false) : ""}
     </td></tr>` : ""}`;
   },
-  // True/False quiz row: copy + checkboxes + answer + CTA (left), image (right).
   quiz_row(s) {
     const isTrue = String(s.correct).toLowerCase() === "true";
     const box = (on) => `<span style="display:inline-block;width:12px;height:12px;border:1px solid ${C.text};vertical-align:middle;margin-right:6px;background:${on ? C.text : "#ffffff"};"></span>`;
@@ -316,18 +308,19 @@ const RENDER = {
       <p style="margin:0 0 6px;font-family:${BRAND.headingFont};font-weight:bold;font-size:14px;color:${C.text};">${isTrue ? "True." : "False."}</p>
       <p style="margin:0 0 14px;font-family:${BRAND.bodyFont};font-size:13px;line-height:1.55;color:${C.muted};">${esc(s.explanation)}</p>
       ${smallButton(s.cta_label, s.cta_url)}`;
-    const image = toList(s.image_url || s.product_image_url)[0];
-    const right = image ? `<img src="${esc(image)}" alt="" width="270" style="display:block;width:100%;max-width:270px;height:auto;border:0;">` : "";
+    const image = nextImage(s.image_url || s.product_image_url);
+    if (!image) {
+      return `<tr><td style="padding:14px 32px;background:${C.soft};">${left}</td></tr>`;
+    }
     return `<tr><td style="padding:14px 24px;background:${C.soft};">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
         <td width="52%" valign="top" class="stackcol" style="padding:14px 16px;">${left}</td>
-        <td width="48%" valign="middle" class="stackcol" style="padding:0;">${right}</td>
+        <td width="48%" valign="middle" class="stackcol" style="padding:0;"><img src="${esc(image)}" alt="" width="270" style="display:block;width:100%;max-width:270px;height:auto;border:0;"></td>
       </tr></table>
     </td></tr>`;
   },
-  // Icon benefit strip (Kids "THE KIDS COLLECTION", Hotel benefits). on black or white.
   benefits_strip(s) {
-    const dark = s.on_dark !== false;              // default dark (black band)
+    const dark = s.on_dark !== false;
     const bg = dark ? C.black : C.panel;
     const fg = dark ? "#ffffff" : C.text;
     const sub = dark ? "#cfcfcf" : C.muted;
@@ -344,7 +337,6 @@ const RENDER = {
     </td></tr>`;
   },
 
-  // ---- Machine / B2B ----
   machine_hero(s) {
     return `<tr><td style="background:${C.black};">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
@@ -360,10 +352,11 @@ const RENDER = {
     </td></tr>`;
   },
   machine_body(s) {
+    const photo = imgs(s.machine_photo_url, s.header);
     return `<tr><td align="center" style="padding:44px 40px;background:${C.panel};">
       ${s.header ? `<p style="margin:0 0 16px;font-family:${BRAND.headingFont};font-weight:500;font-size:24px;letter-spacing:0.3px;color:${C.text};">${esc(s.header)}</p>` : ""}
       <div style="max-width:460px;margin:0 auto;">${paras(s.body)}</div>
-      ${toList(s.machine_photo_url).length ? `<div style="margin-top:20px;">${imgs(s.machine_photo_url, s.header)}</div>` : ""}
+      ${photo ? `<div style="margin-top:20px;">${photo}</div>` : ""}
     </td></tr>`;
   },
   claims_row(s) {
@@ -373,105 +366,4 @@ const RENDER = {
       ["STAIN-FREE", "Clothing-safe, no residue"],
     ].map(([label, sub]) => ({ label, sub }));
     const cells = claims.map(it => `
-      <td width="33%" align="center" valign="top" class="stackcol" style="padding:6px 12px;">
-        ${it.icon_url ? `<img src="${esc(it.icon_url)}" alt="" width="34" height="34" style="display:block;margin:0 auto 8px;border:0;">` : ""}
-        <p style="margin:0 0 4px;font-family:${BRAND.headingFont};font-weight:bold;font-size:12px;letter-spacing:1px;color:${C.text};">${esc(it.label)}</p>
-        ${!it.icon_url ? `<div style="width:24px;height:2px;background:${C.accent};margin:6px auto 8px;"></div>` : ""}
-        <p style="margin:0;font-family:${BRAND.bodyFont};font-size:12px;line-height:1.5;color:${C.muted};">${esc(it.sub)}</p>
-      </td>`).join("");
-    return `<tr><td style="padding:32px 18px;background:${C.soft};">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${cells}</tr></table>
-    </td></tr>`;
-  },
-  outcomes_row(s) {
-    // If items have labels/icons, render as an icon strip; else simple bullet list.
-    if (Array.isArray(s.items) && s.items.length) {
-      return RENDER.benefits_strip({ header: s.header, on_dark: s.on_dark, items: s.items });
-    }
-    const items = (s.outcomes || []).map(o => `
-      <p style="margin:0 0 14px;font-family:${BRAND.bodyFont};font-size:15px;line-height:1.5;color:${C.text};">
-        <span style="color:${C.accent};font-weight:bold;">&#10022;</span>&nbsp;&nbsp;${esc(o)}</p>`).join("");
-    return `<tr><td style="padding:36px 44px;background:${C.panel};">${items}</td></tr>`;
-  },
-  closing_cta(s) {
-    return `<tr><td align="center" style="padding:48px 32px;background:${C.black};">
-      ${headline(s.headline, "#ffffff", 24)}
-      ${button(s.cta_label, s.cta_url, true)}
-    </td></tr>`;
-  },
-};
-
-// -------------------------------------------------------------
-//  4) ASSEMBLE
-// -------------------------------------------------------------
-function buildEmail(data) {
-  const themeKey = resolveTheme(data);
-  const dark = isB2B();
-
-  const incoming = Array.isArray(data.sections) ? data.sections : [];
-  const body = incoming
-    .filter(s => s && s.type && s.type !== "logo_header" && s.type !== "footer")
-    .map(s => { const fn = RENDER[s.type]; return fn ? fn(s) : `<!-- unknown section: ${esc(s.type)} -->`; })
-    .join("\n");
-
-  const inner = RENDER.logo_header() + "\n" + kickerRow(dark) + "\n" + body + "\n" + RENDER.footer();
-
-  return `<!DOCTYPE html>
-<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="X-UA-Compatible" content="IE=edge">
-<title>${esc(data.subject || BRAND.name)}</title>
-<!-- theme: ${esc(themeKey)} | audience: ${esc(AUD || "consumer")} -->
-<style>
-  @media only screen and (max-width:480px){
-    .stackcol{display:block !important;width:100% !important;padding:10px 6px !important;text-align:center !important;}
-    .stackcol img{margin:0 auto !important;}
-  }
-</style>
-</head>
-<body style="margin:0;padding:0;background:${C.soft};">
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;">${esc(data.preview_text || "")}</div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${C.soft};">
-  <tr><td align="center" style="padding:24px 12px;">
-    <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;background:${C.panel};">
-      ${inner}
-    </table>
-  </td></tr>
-</table>
-</body>
-</html>`;
-}
-
-// -------------------------------------------------------------
-//  5) HANDLER
-// -------------------------------------------------------------
-module.exports = async (req, res) => {
-  if (req.method !== "POST") { res.status(405).json({ error: "Use POST." }); return; }
-  try {
-    let data = req.body;
-    if (typeof data === "string") data = JSON.parse(data);
-    if (data && typeof data.json === "string") {
-      const env = data;
-      data = JSON.parse(env.json);
-      ["send_date", "date", "publish_date", "date_iso", "theme", "audience"].forEach(k => {
-        if (data[k] == null && env[k] != null) data[k] = env[k];
-      });
-    }
-    const q = req.query || {};
-    ["send_date", "date", "publish_date", "date_iso", "theme"].forEach(k => {
-      if (data && (data[k] == null || data[k] === "") && q[k]) data[k] = q[k];
-    });
-    if (!data || !Array.isArray(data.sections)) {
-      res.status(400).json({ error: "Expected a JSON body with a 'sections' array.", received: data }); return;
-    }
-    const html = buildEmail(data);
-    res.status(200).json({ subject: data.subject || "", preview_text: data.preview_text || "", theme: resolveTheme(data), html });
-  } catch (err) {
-    res.status(400).json({ error: "Could not parse Mason's JSON.", detail: String(err && err.message || err) });
-  }
-};
-
-module.exports.buildEmail = buildEmail;
-module.exports.pickThemeKey = pickThemeKey;
+      <td width="33%" align="center" valign="top" class="stackcol"
