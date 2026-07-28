@@ -102,7 +102,7 @@ function resolveTheme(data) {
 }
 function resolveDate(data) {
   const raw = data && (data.send_date || data.date || data.publish_date || data.date_iso);
-  if (raw) { const d = new Date(raw); if (!isNaN(d.getTime())) return d; }
+  if (raw) { const d = new Date(String(raw).trim()); if (!isNaN(d.getTime())) return d; }
   return new Date();
 }
 
@@ -366,4 +366,105 @@ const RENDER = {
       ["STAIN-FREE", "Clothing-safe, no residue"],
     ].map(([label, sub]) => ({ label, sub }));
     const cells = claims.map(it => `
-      <td width="33%" align="center" valign="top" class="stackcol"
+      <td width="33%" align="center" valign="top" class="stackcol" style="padding:6px 12px;">
+        ${it.icon_url ? `<img src="${esc(it.icon_url)}" alt="" width="34" height="34" style="display:block;margin:0 auto 8px;border:0;">` : ""}
+        <p style="margin:0 0 4px;font-family:${BRAND.headingFont};font-weight:bold;font-size:12px;letter-spacing:1px;color:${C.text};">${esc(it.label)}</p>
+        ${!it.icon_url ? `<div style="width:24px;height:2px;background:${C.accent};margin:6px auto 8px;"></div>` : ""}
+        <p style="margin:0;font-family:${BRAND.bodyFont};font-size:12px;line-height:1.5;color:${C.muted};">${esc(it.sub)}</p>
+      </td>`).join("");
+    return `<tr><td style="padding:32px 18px;background:${C.soft};">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${cells}</tr></table>
+    </td></tr>`;
+  },
+  outcomes_row(s) {
+    if (Array.isArray(s.items) && s.items.length) {
+      return RENDER.benefits_strip({ header: s.header, on_dark: s.on_dark, items: s.items });
+    }
+    const items = (s.outcomes || []).map(o => `
+      <p style="margin:0 0 14px;font-family:${BRAND.bodyFont};font-size:15px;line-height:1.5;color:${C.text};">
+        <span style="color:${C.accent};font-weight:bold;">&#10022;</span>&nbsp;&nbsp;${esc(o)}</p>`).join("");
+    return `<tr><td style="padding:36px 44px;background:${C.panel};">${items}</td></tr>`;
+  },
+  closing_cta(s) {
+    return `<tr><td align="center" style="padding:48px 32px;background:${C.black};">
+      ${headline(s.headline, "#ffffff", 24)}
+      ${button(s.cta_label, s.cta_url, true)}
+    </td></tr>`;
+  },
+};
+
+// -------------------------------------------------------------
+//  4) ASSEMBLE
+// -------------------------------------------------------------
+function buildEmail(data) {
+  const themeKey = resolveTheme(data);
+  const dark = isB2B();
+  SEEN = new Set();   // reset per-email image dedupe
+
+  const incoming = Array.isArray(data.sections) ? data.sections : [];
+  const body = incoming
+    .filter(s => s && s.type && s.type !== "logo_header" && s.type !== "footer")
+    .map(s => { const fn = RENDER[s.type]; return fn ? fn(s) : `<!-- unknown section: ${esc(s.type)} -->`; })
+    .join("\n");
+
+  const inner = RENDER.logo_header() + "\n" + kickerRow(dark) + "\n" + body + "\n" + RENDER.footer();
+
+  return `<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<title>${esc(data.subject || BRAND.name)}</title>
+<!-- theme: ${esc(themeKey)} | audience: ${esc(AUD || "consumer")} -->
+<style>
+  @media only screen and (max-width:480px){
+    .stackcol{display:block !important;width:100% !important;padding:10px 6px !important;text-align:center !important;}
+    .stackcol img{margin:0 auto !important;}
+  }
+</style>
+</head>
+<body style="margin:0;padding:0;background:${C.soft};">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;">${esc(data.preview_text || "")}</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${C.soft};">
+  <tr><td align="center" style="padding:24px 12px;">
+    <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;background:${C.panel};">
+      ${inner}
+    </table>
+  </td></tr>
+</table>
+</body>
+</html>`;
+}
+
+// -------------------------------------------------------------
+//  5) HANDLER
+// -------------------------------------------------------------
+module.exports = async (req, res) => {
+  if (req.method !== "POST") { res.status(405).json({ error: "Use POST." }); return; }
+  try {
+    let data = req.body;
+    if (typeof data === "string") data = JSON.parse(data);
+    if (data && typeof data.json === "string") {
+      const env = data;
+      data = JSON.parse(env.json);
+      ["send_date", "date", "publish_date", "date_iso", "theme", "audience"].forEach(k => {
+        if (data[k] == null && env[k] != null) data[k] = env[k];
+      });
+    }
+    const q = req.query || {};
+    ["send_date", "date", "publish_date", "date_iso", "theme"].forEach(k => {
+      if (data && (data[k] == null || data[k] === "") && q[k]) data[k] = q[k];
+    });
+    if (!data || !Array.isArray(data.sections)) {
+      res.status(400).json({ error: "Expected a JSON body with a 'sections' array.", received: data }); return;
+    }
+    const html = buildEmail(data);
+    res.status(200).json({ subject: data.subject || "", preview_text: data.preview_text || "", theme: resolveTheme(data), html });
+  } catch (err) {
+    res.status(400).json({ error: "Could not parse Mason's JSON.", detail: String(err && err.message || err) });
+  }
+};
+
+module.exports.buildEmail = buildEmail;
+module.exports.pickThemeKey = pickThemeKey;
