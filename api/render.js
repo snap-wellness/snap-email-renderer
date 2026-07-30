@@ -3,29 +3,24 @@
 //  Receives Mason's JSON (POST) and returns email-safe HTML.
 //  Endpoint once deployed:  https://<your-project>.vercel.app/api/render
 // =============================================================
-
 // -------------------------------------------------------------
 //  1) BRAND CONFIG  —  EDIT THIS BLOCK ONLY.
 // -------------------------------------------------------------
 const BRAND = {
   name: "SNAP",
-
   // ---- Logo ----
-  logoUrl:     "https://res.cloudinary.com/da3jrnugf/image/upload/snap_lockup_white.png",   // full lockup (white) for the black B2B header
-  logoUrlDark: "https://res.cloudinary.com/da3jrnugf/image/upload/snap_lockup_black.png",   // full lockup (black) for the white consumer header
-  logoHeight: 38,
-
+  logoUrl:     "https://res.cloudinary.com/da3jrnugf/image/upload/e_negate/v1785429821/Screenshot_2026-07-30_at_12.43.33_PM.png",   // NEW tightened lockup, whitened via Cloudinary e_negate, for the black B2B header
+  logoUrlDark: "https://res.cloudinary.com/da3jrnugf/image/upload/v1785429821/Screenshot_2026-07-30_at_12.43.33_PM.png",   // NEW tightened lockup (black) for the white consumer header
+  logoHeight: 30,   // EDIT 1: was 38 — logo made smaller across all emails
   // Benefit-strip GRAPHICS (icons + labels baked into one image each).
   // A benefits_strip uses: its own image_url, else graphics[section.graphic],
   // else the audience default (consumer -> consumer, B2B -> hotel).
   // Benefit strips are now code-built from ICONS + STRIP_SETS (defined below).
-
   social: [
     { label: "Twitter",   url: "https://twitter.com/",   icon: "" },
     { label: "Facebook",  url: "https://facebook.com/",  icon: "" },
     { label: "Instagram", url: "https://instagram.com/", icon: "" },
   ],
-
   // ---- Core colors (brand book) ----
   black:  "#000000",
   white:  "#ffffff",
@@ -34,12 +29,10 @@ const BRAND = {
   text:   "#111111",
   muted:  "#6b6b6b",
   accent: "#000000",
-
   // ---- Fonts (brand book, "On Type") ----
   headingFont: "'Attila Sans Uniform', 'Helvetica Neue', Helvetica, Arial, sans-serif",
   bodyFont:    "'Helvetica Neue', Helvetica, Arial, sans-serif",
   cursiveFont: "'Snell Roundhand', 'Apple Chancery', 'Segoe Script', Georgia, serif",   // "About the Formula" script
-
   footer: {
     site: "SNAPWELLNESS.COM",
     unsubscribeHtml: 'No longer want to receive these emails? <a href="{% unsubscribe %}" style="color:#111111;text-decoration:underline;">Unsubscribe</a>.',
@@ -47,9 +40,7 @@ const BRAND = {
     orgAddress: "{{ organization.full_address }}",
   },
 };
-
 const DEFAULT_CTA_URL = "https://www.snapwellness.com";
-
 // -------------------------------------------------------------
 //  1b) PRODUCT CATALOG  — image auto-fills when Mason names a product.
 //      (All SPF 30. Pulled from snapwellness.com.)
@@ -78,7 +69,6 @@ function productImage(name) {
   if (!name) return "";
   return PRODUCTS[String(name).trim().toLowerCase()] || "";
 }
-
 // -------------------------------------------------------------
 //  1d) BENEFIT ICONS + STRIP SETS  (code-built, always aligned)
 // -------------------------------------------------------------
@@ -87,7 +77,6 @@ const ICONS = {};
 ["reef_safe","clothing_safe","water_sweat","moisturizing","hypoallergenic","uva_uvb",
  "elevate_experience","generate_revenue","market_visibility",
  "ten_second_coverage","clean_ingredients","stain_free"].forEach(n => { ICONS[n] = ICON_BASE + n + ".png"; });
-
 // White-circle BADGES for the "About the Formula" flanking layout.
 const BADGES = {};
 ["mineral_based","hypoallergenic","water_sweat","no_white_cast","moisturizing","uva_uvb"].forEach(n => { BADGES[n] = ICON_BASE + "b_" + n + ".png"; });
@@ -100,7 +89,6 @@ const DEFAULT_FEATURES = [
   { badge: "moisturizing",   label: "Moisturizing" },
   { badge: "uva_uvb",        label: "UVA/UVB Broad Spectrum" },
 ];
-
 // A benefits_strip picks a set by name (or the audience default). Each strip is
 // drawn in code (icon + label), so it's always full-width and perfectly aligned.
 const STRIP_SETS = {
@@ -122,7 +110,6 @@ const STRIP_SETS = {
     { icon: "stain_free",          label: "Stain-Free Application", sub: "Transparent and non-greasy, with no white cast that harms clothing." },
   ]},
 };
-
 // -------------------------------------------------------------
 //  1c) SEASONAL ACCENT (subtle; no more "kicker" chip)
 // -------------------------------------------------------------
@@ -134,7 +121,6 @@ const THEMES = {
 let C = Object.assign({}, BRAND);
 let AUD = "";
 function isB2B() { return AUD === "hotel" || AUD === "country club" || AUD === "camp"; }
-
 function pickThemeKey(d) {
   const m = d.getMonth() + 1, day = d.getDate(), md = m * 100 + day;
   if (md >= 1215 || md <= 101) return "holiday";
@@ -166,7 +152,6 @@ function resolveDate(data) {
   if (raw) { const d = new Date(String(raw).trim()); if (!isNaN(d.getTime())) return d; }
   return new Date();
 }
-
 // -------------------------------------------------------------
 //  2) HELPERS
 // -------------------------------------------------------------
@@ -188,8 +173,9 @@ function paras(text, color) {
 // CTA label with B2B guard: B2B never says "SHOP…".
 function ctaText(label) {
   let t = String(label || "").trim();
-  if (isB2B() && /^shop\b/i.test(t)) t = "LEARN MORE";
-  if (!t) t = isB2B() ? "LEARN MORE" : "SHOP NOW";
+  // B2B / machine emails never say "SHOP…" or "Schedule a Consultation" — they request a quote.
+  if (isB2B() && (/^shop\b/i.test(t) || /consultation/i.test(t) || /^learn more$/i.test(t) || !t)) t = "Request a Quote";
+  if (!t) t = isB2B() ? "Request a Quote" : "SHOP NOW";
   return t;
 }
 function button(label, url, onDark) {
@@ -212,7 +198,6 @@ function smallButton(label, url) {
     <td bgcolor="#000000"><a href="${href}" target="_blank" style="display:inline-block;padding:10px 22px;font-family:${BRAND.bodyFont};font-size:11px;letter-spacing:1px;font-weight:bold;text-transform:uppercase;color:#ffffff;text-decoration:none;">${text}</a></td>
   </tr></table>`;
 }
-
 function toList(v) {
   if (v == null) return [];
   return (Array.isArray(v) ? v : [v]).filter(u => u != null && String(u).trim() !== "");
@@ -225,7 +210,6 @@ function once(url) {
 }
 function newImages(urls) { return toList(urls).filter(once); }
 function nextImage(urls) { for (const u of toList(urls)) { if (once(u)) return u; } return ""; }
-
 function img(url, alt) {
   if (!url) return "";
   return `<img src="${esc(url)}" alt="${esc(alt || "")}" width="600" style="display:block;width:100%;max-width:600px;height:auto;border:0;">`;
@@ -245,13 +229,14 @@ function cursiveHeader(text, color) {
   return `<div style="font-family:${BRAND.cursiveFont};font-style:italic;font-size:40px;line-height:1.1;color:${color || C.text};">${escText(text)}</div>`;
 }
 // one flanking badge cell: badge image + label (label side: 'left' or 'right')
+// EDIT 4: vertical padding tightened (8px -> 5px) so the three badges sit closer together.
 function badgeCell(feat, side) {
   const src = BADGES[feat.badge] || feat.badge_url || "";
   const badge = src ? `<img src="${esc(src)}" alt="" width="54" height="54" style="display:block;width:54px;height:54px;border:0;">` : "";
   const label = `<span style="font-family:${BRAND.bodyFont};font-size:12px;line-height:1.3;color:${C.text};">${escText(feat.label)}</span>`;
   const cells = side === "left"
-    ? `<td valign="middle" align="right" style="padding:8px 8px;">${label}</td><td valign="middle" width="60" style="padding:8px 0;">${badge}</td>`
-    : `<td valign="middle" width="60" style="padding:8px 0;">${badge}</td><td valign="middle" align="left" style="padding:8px 8px;">${label}</td>`;
+    ? `<td valign="middle" align="right" style="padding:5px 8px;">${label}</td><td valign="middle" width="60" style="padding:5px 0;">${badge}</td>`
+    : `<td valign="middle" width="60" style="padding:5px 0;">${badge}</td><td valign="middle" align="left" style="padding:5px 8px;">${label}</td>`;
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${cells}</tr></table>`;
 }
 function socialRow() {
@@ -272,7 +257,7 @@ function iconStrip(header, items, dark) {
     const src = (it.icon && ICONS[it.icon]) || it.icon_url || "";
     return `<td valign="top" align="center" class="stackcol" style="padding:14px 10px;">
       ${src ? `<img src="${esc(src)}" alt="" width="46" height="46" style="display:block;margin:0 auto 12px;border:0;">` : ""}
-      <p style="margin:0 0 4px;font-family:${BRAND.headingFont};font-weight:bold;font-size:12px;letter-spacing:0.5px;text-transform:uppercase;color:${fg};">${escText(it.label)}</p>
+      <p style="margin:0 0 4px;font-family:${BRAND.headingFont};font-weight:bold;font-size:10px;letter-spacing:0.3px;text-transform:uppercase;color:${fg};">${escText(it.label)}</p>
       ${it.sub ? `<p style="margin:0;font-family:${BRAND.bodyFont};font-size:11px;line-height:1.45;color:${subc};">${escText(it.sub)}</p>` : ""}
     </td>`;
   }).join("");
@@ -281,7 +266,6 @@ function iconStrip(header, items, dark) {
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${cells}</tr></table>
   </td></tr>`;
 }
-
 // -------------------------------------------------------------
 //  3) SECTION RENDERERS
 // -------------------------------------------------------------
@@ -294,7 +278,8 @@ const RENDER = {
       ? `<img src="${esc(src)}" alt="${esc(BRAND.name)}" height="${BRAND.logoHeight}" style="display:block;height:${BRAND.logoHeight}px;width:auto;border:0;">`
       : `<span style="font-family:${BRAND.headingFont};font-weight:700;font-size:22px;letter-spacing:2px;color:${dark ? "#ffffff" : "#000000"};">${esc(BRAND.name)}</span>`;
     const border = dark ? "" : "border-bottom:1px solid #ececec;";
-    return `<tr><td align="center" style="padding:16px 24px;background:${bg};${border}">${inner}</td></tr>`;
+    // EDIT 2: bottom padding reduced (16px -> 8px) to shrink the gap under the logo across all emails.
+    return `<tr><td align="center" style="padding:16px 24px 8px;background:${bg};${border}">${inner}</td></tr>`;
   },
   footer() {
     return `<tr><td align="center" style="padding:22px 24px;background:${C.black};">
@@ -307,14 +292,14 @@ const RENDER = {
       <p style="margin:0;font-family:${BRAND.bodyFont};font-size:11px;line-height:1.6;color:${C.muted};">${BRAND.footer.orgAddress}</p>
     </td></tr>`;
   },
-
   // ---- Consumer ----
   // Hero: campaign HEADER (live) + image + subheader/button. Header replaces the old kicker chip.
   hero_dark(s) {
     const head = s.header || s.headline;
     const image = imgs(s.product_image_url || s.image_url, head);
     const bar = s.subheadline || s.cta_label;
-    return `${head ? `<tr><td align="center" style="padding:32px 32px 16px;background:${C.panel};">${headline(head, C.text, 30)}</td></tr>` : ""}
+    // EDIT 2: top padding reduced (32px -> 16px) so the header sits closer to the logo.
+    return `${head ? `<tr><td align="center" style="padding:16px 32px 16px;background:${C.panel};">${headline(head, C.text, 30)}</td></tr>` : ""}
     ${image ? `<tr><td style="background:${C.panel};">${image}</td></tr>` : ""}
     ${bar ? `<tr><td align="center" style="padding:20px 32px 28px;background:${C.panel};">
       ${s.subheadline ? sub(s.subheadline) : ""}
@@ -343,7 +328,11 @@ const RENDER = {
       </tr></table>
     </td></tr>`;
   },
-  // Flanking layout: cursive header, blurb, product photo with 3 badges each side, product-name button.
+  // Flanking layout: cursive header, product photo with 3 badges each side, product-name button.
+  // EDIT 3: when the flanking badge graphics are shown, the "About the Formula" body paragraph
+  //         is intentionally omitted (the badges already communicate the formula).
+  // EDIT 4: side columns widened (28% -> 30%) and center narrowed (44% -> 40%) to pull the
+  //         badges in closer to the product image.
   about_formula(s) {
     const head = s.header || "About the Formula";
     const productImg = s.product_image_url || s.lifestyle_image_url;
@@ -351,20 +340,19 @@ const RENDER = {
       const feats = (Array.isArray(s.features) && s.features.length) ? s.features : DEFAULT_FEATURES;
       const left = feats.slice(0, 3), right = feats.slice(3, 6);
       const hero = `<img src="${esc(nextImage(productImg))}" alt="" width="240" style="display:block;width:100%;max-width:240px;height:auto;border:0;border-radius:14px;margin:0 auto;">`;
-      return `<tr><td align="center" style="padding:40px 24px 6px;background:${C.panel};">
+      return `<tr><td align="center" style="padding:40px 24px 10px;background:${C.panel};">
         ${cursiveHeader(head, C.text)}
-        ${s.body ? `<div style="max-width:420px;margin:14px auto 4px;">${paras(s.body)}</div>` : ""}
       </td></tr>
-      <tr><td style="padding:6px 14px 8px;background:${C.panel};">
+      <tr><td style="padding:2px 14px 8px;background:${C.panel};">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
-          <td width="28%" valign="middle" class="stackcol" style="padding:0;">${left.map(fh => badgeCell(fh, "left")).join("")}</td>
-          <td width="44%" valign="middle" class="stackcol" style="padding:0 6px;">${hero}</td>
-          <td width="28%" valign="middle" class="stackcol" style="padding:0;">${right.map(fh => badgeCell(fh, "right")).join("")}</td>
+          <td width="30%" valign="middle" class="stackcol" style="padding:0;">${left.map(fh => badgeCell(fh, "left")).join("")}</td>
+          <td width="40%" valign="middle" class="stackcol" style="padding:0 4px;">${hero}</td>
+          <td width="30%" valign="middle" class="stackcol" style="padding:0;">${right.map(fh => badgeCell(fh, "right")).join("")}</td>
         </tr></table>
       </td></tr>
       ${s.cta_label ? `<tr><td align="center" style="padding:18px 32px 30px;background:${C.panel};">${button(s.cta_label, s.cta_url, false)}</td></tr>` : ""}`;
     }
-    // fallback: simple centered version
+    // fallback: simple centered version (no badge graphics -> keep the body copy)
     return `<tr><td style="padding:0;background:${C.panel};">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
         <td align="center" style="padding:40px 32px 8px;">${cursiveHeader(head, C.text)}</td>
@@ -452,13 +440,12 @@ const RENDER = {
     if (def) return iconStrip(s.header, def.items, def.on_dark !== false);
     return "";
   },
-
   // ---- Machine / B2B ----
   machine_hero(s) {
     const head = s.header || s.headline;
     return `<tr><td style="background:${C.black};">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
-        <td align="center" style="padding:40px 32px 26px;">
+        <td align="center" style="padding:20px 32px 26px;">
           ${head ? headline(head, "#ffffff", 30) : ""}
           ${s.subheadline ? `<p style="margin:0 0 6px;font-family:${BRAND.bodyFont};font-size:15px;line-height:1.5;color:#cfcfcf;">${escText(s.subheadline)}</p>` : ""}
         </td>
@@ -490,7 +477,6 @@ const RENDER = {
     </td></tr>`;
   },
 };
-
 // -------------------------------------------------------------
 //  4) ASSEMBLE
 // -------------------------------------------------------------
@@ -498,15 +484,12 @@ function buildEmail(data) {
   const themeKey = resolveTheme(data);
   const dark = isB2B();
   SEEN = new Set();
-
   const incoming = Array.isArray(data.sections) ? data.sections : [];
   const body = incoming
     .filter(s => s && s.type && s.type !== "logo_header" && s.type !== "footer")
     .map(s => { const fn = RENDER[s.type]; return fn ? fn(s) : `<!-- unknown section: ${esc(s.type)} -->`; })
     .join("\n");
-
   const inner = RENDER.logo_header() + "\n" + body + "\n" + RENDER.footer();
-
   return `<!DOCTYPE html>
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml">
 <head>
@@ -534,7 +517,6 @@ function buildEmail(data) {
 </body>
 </html>`;
 }
-
 // -------------------------------------------------------------
 //  5) HANDLER
 // -------------------------------------------------------------
@@ -563,6 +545,5 @@ module.exports = async (req, res) => {
     res.status(400).json({ error: "Could not parse Mason's JSON.", detail: String(err && err.message || err) });
   }
 };
-
 module.exports.buildEmail = buildEmail;
 module.exports.pickThemeKey = pickThemeKey;
