@@ -215,7 +215,15 @@ function img(url, alt) {
   return `<img src="${esc(url)}" alt="${esc(alt || "")}" width="600" style="display:block;width:100%;max-width:600px;height:auto;border:0;">`;
 }
 function imgs(urls, alt) {
-  const list = newImages(urls);
+  // Render EVERY image provided in this list, in order. We only collapse exact
+  // duplicates WITHIN this same list — an image that happened to appear elsewhere
+  // in the email is still shown here, so a field with 4 URLs always renders 4.
+  const localSeen = new Set();
+  const list = toList(urls).filter(u => {
+    const k = String(u == null ? "" : u).trim();
+    if (!k || localSeen.has(k)) return false;
+    localSeen.add(k); SEEN.add(k); return true;
+  });
   if (!list.length) return "";
   return list.map((u, i) => `<div style="font-size:0;line-height:0;${i ? "margin-top:2px;" : ""}">${img(u, alt)}</div>`).join("");
 }
@@ -394,7 +402,8 @@ const RENDER = {
   use_case_grid(s) {
     const items = (s.items || []).slice(0, 4);
     const cells = items.map(it => {
-      const im = nextImage(it.image_url);
+      const im = toList(it.image_url)[0] || "";        // render this item's image directly (no cross-section de-dup)
+      if (im) SEEN.add(String(im).trim());
       return `<td width="25%" valign="top" align="center" class="stackcol" style="padding:8px 6px;">
         ${im ? `<img src="${esc(im)}" alt="${esc(it.caption || "")}" width="130" style="display:block;width:100%;max-width:130px;height:auto;border:0;margin:0 auto 8px;">` : ""}
         ${it.caption ? `<p style="margin:0;font-family:${BRAND.bodyFont};font-size:12px;line-height:1.4;color:${C.text};">${escText(it.caption)}</p>` : ""}
