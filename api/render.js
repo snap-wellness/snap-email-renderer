@@ -390,6 +390,41 @@ const RENDER = {
       ${s.name ? `<p style="margin:14px 0 0;font-family:${BRAND.headingFont};font-weight:bold;font-size:14px;letter-spacing:1px;text-transform:uppercase;color:${C.text};">${escText(s.name)}</p>` : ""}
     </td></tr>`;
   },
+  // Use-case lifestyle grid: header + subtitle + a row of up to 4 captioned lifestyle photos.
+  use_case_grid(s) {
+    const items = (s.items || []).slice(0, 4);
+    const cells = items.map(it => {
+      const im = nextImage(it.image_url);
+      return `<td width="25%" valign="top" align="center" class="stackcol" style="padding:8px 6px;">
+        ${im ? `<img src="${esc(im)}" alt="${esc(it.caption || "")}" width="130" style="display:block;width:100%;max-width:130px;height:auto;border:0;margin:0 auto 8px;">` : ""}
+        ${it.caption ? `<p style="margin:0;font-family:${BRAND.bodyFont};font-size:12px;line-height:1.4;color:${C.text};">${escText(it.caption)}</p>` : ""}
+      </td>`;
+    }).join("");
+    return `<tr><td align="center" style="padding:36px 24px 22px;background:${C.panel};">
+      ${s.header ? headline(s.header, C.text, 26) : ""}
+      ${s.subtitle ? `<p style="margin:6px auto 20px;max-width:460px;font-family:${BRAND.bodyFont};font-size:15px;line-height:1.6;color:${C.muted};">${escText(s.subtitle)}</p>` : ""}
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${cells}</tr></table>
+    </td></tr>`;
+  },
+  // Product photo beside a short bulleted claims list (dark panel).
+  product_benefits(s) {
+    const image = nextImage(s.product_image_url || productImage(s.name));
+    const gold = "#c9b68a";
+    const bullets = toList(s.benefits).map(b => `<p style="margin:0 0 12px;font-family:${BRAND.bodyFont};font-size:15px;line-height:1.35;color:#ffffff;">&bull;&nbsp;&nbsp;${escText(b)}</p>`).join("");
+    const right = `
+      ${s.name ? `<p style="margin:0 0 6px;font-family:${BRAND.headingFont};font-weight:bold;font-size:18px;letter-spacing:0.5px;text-transform:uppercase;color:#ffffff;">${escText(s.name)}</p>` : ""}
+      ${s.eyebrow ? `<p style="margin:0 0 18px;font-family:${BRAND.bodyFont};font-size:12px;letter-spacing:1px;text-transform:uppercase;color:${gold};">${escText(s.eyebrow)}</p>` : ""}
+      ${bullets}
+      ${s.cta_label ? `<div style="margin-top:16px;">${button(s.cta_label, s.cta_url, true)}</div>` : ""}`;
+    const imgCell = image ? `<div style="background:${C.soft};padding:20px;"><img src="${esc(image)}" alt="${esc(s.name || "")}" width="220" style="display:block;width:100%;max-width:220px;height:auto;border:0;margin:0 auto;"></div>` : "";
+    if (!image) return `<tr><td style="padding:36px 32px;background:${C.black};">${right}</td></tr>`;
+    return `<tr><td style="padding:0;background:${C.black};">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+        <td width="46%" valign="middle" class="stackcol" style="padding:24px 12px 24px 24px;">${imgCell}</td>
+        <td width="54%" valign="middle" class="stackcol" style="padding:24px 24px 24px 12px;">${right}</td>
+      </tr></table>
+    </td></tr>`;
+  },
   closing_lifestyle(s) {
     const image = imgs(s.lifestyle_image_url, s.header || s.headline);
     const head = s.header || s.headline;
@@ -462,6 +497,23 @@ const RENDER = {
       ${s.header ? `<p style="margin:0 0 16px;font-family:${BRAND.headingFont};font-weight:500;font-size:24px;letter-spacing:0.3px;color:${C.text};">${escText(s.header)}</p>` : ""}
       <div style="max-width:460px;margin:0 auto;">${paras(s.body)}</div>
       ${photo ? `<div style="margin-top:20px;">${photo}</div>` : ""}
+    </td></tr>`;
+  },
+  // Ingredient-exclusion list beside a lifestyle image (dark panel).
+  made_without(s) {
+    const head = s.header || "Made Without";
+    const items = toList(s.items);
+    const list = items.map(it => `<p style="margin:0 0 12px;font-family:${BRAND.bodyFont};font-size:14px;line-height:1.3;letter-spacing:0.5px;text-transform:uppercase;color:#ffffff;">&bull;&nbsp;&nbsp;${escText(it)}</p>`).join("");
+    const image = nextImage(s.image_url || s.lifestyle_image_url);
+    const leftCell = `
+      <p style="margin:0 0 18px;font-family:${BRAND.headingFont};font-weight:700;font-size:22px;letter-spacing:1px;text-transform:uppercase;color:#ffffff;">${escText(head)}:</p>
+      ${list}`;
+    if (!image) return `<tr><td style="padding:36px 32px;background:${C.black};">${leftCell}</td></tr>`;
+    return `<tr><td style="padding:0;background:${C.black};">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+        <td width="45%" valign="middle" class="stackcol" style="padding:32px 24px 32px 32px;">${leftCell}</td>
+        <td width="55%" valign="middle" class="stackcol" style="padding:0;"><img src="${esc(image)}" alt="" width="330" style="display:block;width:100%;max-width:330px;height:auto;border:0;"></td>
+      </tr></table>
     </td></tr>`;
   },
   claims_row(s) { return RENDER.benefits_strip(s); },   // alias — same graphic treatment
